@@ -22,6 +22,7 @@ void setup() {
   // Start the BLE module
   // Max conns as Periph, Max conns as Central
   Bluefruit.begin(1, 0); 
+  bond_clear_prph(); // Clear all bonds, for testing purposes
 
   setup_device_and_device_information();
   setup_service();
@@ -34,18 +35,18 @@ void loop() {
   digitalToggle(LED_RED);
 
   if (Bluefruit.connected()) {
+    uint16_t conn_handle = Bluefruit.connHandle();
     // If connected, send an indication with the current state
     // uint8_t state = digitalRead(LEAK_SENSOR_PIN); // Read sensor value
     uint8_t state = random(0, 2); // Simulate random state for testing
-    leakseek_characteristic.write8(state); 
-    //leakseek_characteristic.notify();
+    leakseek_characteristic.indicate8(conn_handle, state); 
     Serial.print("Wrote state: ");
     Serial.println(state);
   } else {
     Serial.println("Not connected");
   }
 
-  
+  delay(1000);
 }
 
 void setup_device_and_device_information() {
@@ -65,7 +66,7 @@ void setup_service() {
   leakseek_service.begin();
   
   // Configure characteristic for reading and "notifying" (i.e. expect an ack)
-  leakseek_characteristic.setProperties(CHR_PROPS_INDICATE); // Consider adding CHR_PROPS_READ
+  leakseek_characteristic.setProperties(CHR_PROPS_READ | CHR_PROPS_INDICATE); // Consider adding CHR_PROPS_READ
   // Configure the characteristic to be readable but not writable
   leakseek_characteristic.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
   leakseek_characteristic.setFixedLen(1); // Simple state, 1 byte, 0/1
@@ -81,9 +82,9 @@ void setup_peripheral() {
   Bluefruit.Periph.setConnIntervalMS(1000, 1100);
   // Feel free to ignore up to 5 pings from the central if nothing has changed.
   Bluefruit.Periph.setConnSlaveLatency(5);
- 
-  // Set the connection supervision timeout to 3 seconds; i.e. if we haven't received a pin after 3 seconds, consider the connection lost.
-  Bluefruit.Periph.setConnSupervisionTimeout(3000);
+
+  // Set the connection supervision timeout to 6 seconds; i.e. if we haven't received a pin after 6 seconds, consider the connection lost.
+  Bluefruit.Periph.setConnSupervisionTimeout(6000);
 
   // Set the connect/disconnect callback handlers
   Bluefruit.Periph.setConnectCallback(connect_callback);
