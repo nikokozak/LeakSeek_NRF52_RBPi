@@ -1,11 +1,23 @@
 import asyncio
 from bleak import BleakScanner, BleakClient
+from typing import Union
+from fastapi import FastAPI
+from collections import defaultdict
+import json as JSON
+import time
+
+# Shared sensor data store
+sensor_data = defaultdict(dict)
+sensor_queue = asyncio.Queue()
+
+app = FastAPI()
 
 async def indication_handler(sender, data):
     value = int.from_bytes(data, byteorder='little')
+    await sensor_queue.put({"sender": sender, "value": value})
     print(f"Indication from {sender}: {value}")
 
-async def test_connection():
+async def ble_manager():
     # Scan for devices, we can set a timeout if necessary
     devices = None
 
@@ -61,9 +73,21 @@ async def test_connection():
 
                 # Keep the script running to receive indications
                 while True:
+                    sensor_update = await sensor_queue.get()
+                    sensor_data[device.address] = {
+                        "value": sensor_update["value"],
+                        "timestamp": time.time()
+                    }
+
                     await asyncio.sleep(1)
                     if not client.is_connected:
                         print("Device disconnected.")
                         break
 
-asyncio.run(test_connection())
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(ble_manager())
+
+@app.get("/sensor_data")
+async def get_sensor_data():
+    return dict(sensor_data)
