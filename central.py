@@ -6,6 +6,8 @@ from collections import defaultdict
 import json as JSON
 import time
 
+# TODO: We need to refine the queue and shared dict a bit, this is a basic implementation
+
 # Shared sensor data store
 sensor_data = defaultdict(dict)
 sensor_queue = asyncio.Queue()
@@ -14,6 +16,7 @@ app = FastAPI()
 
 async def indication_handler(sender, data):
     value = int.from_bytes(data, byteorder='little')
+    # Put the new sensor data into the queue
     await sensor_queue.put({"sender": sender, "value": value})
     print(f"Indication from {sender}: {value}")
 
@@ -73,12 +76,15 @@ async def ble_manager():
 
                 # Keep the script running to receive indications
                 while True:
+                    # Get the latest sensor update from the queue
                     sensor_update = await sensor_queue.get()
+                    # Update the shared sensor data store
                     sensor_data[device.address] = {
                         "value": sensor_update["value"],
                         "timestamp": time.time()
                     }
 
+                    # give some time before checking connection status again
                     await asyncio.sleep(1)
                     if not client.is_connected:
                         print("Device disconnected.")
