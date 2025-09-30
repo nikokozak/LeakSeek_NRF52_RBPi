@@ -28,7 +28,9 @@ void setup() {
   setup_service();
   setup_peripheral();
   start_advertising();
-  Serial.println("Advertising...");
+  if (Serial) {
+    Serial.println("Waiting for connections...");
+  }
 }
 
 void loop() {
@@ -40,10 +42,10 @@ void loop() {
     // uint8_t state = digitalRead(LEAK_SENSOR_PIN); // Read sensor value
     uint8_t state = random(0, 2); // Simulate random state for testing
     leakseek_characteristic.indicate8(conn_handle, state); 
-    Serial.print("Wrote state: ");
+    if (Serial) { Serial.print("Wrote state: "); }
     Serial.println(state);
   } else {
-    Serial.println("Not connected");
+    if (Serial) { Serial.println("Not connected"); }
   }
 
   delay(1000);
@@ -117,16 +119,18 @@ void connect_callback(uint16_t conn_handle) {
   // Get central name
   char central_name[32] = { 0 };
   connection->getPeerName(central_name, sizeof(central_name));
-  Serial.println(central_name);
+  if (Serial) { Serial.println(central_name); }
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void) conn_handle;
   (void) reason;
 
-  Serial.println("Disconnected, reason = 0x");
-  Serial.println(reason, HEX);
-  Serial.println("Advertising...");
+  if (Serial) { 
+    Serial.println("Disconnected, reason = 0x");
+    Serial.println(reason, HEX);
+    Serial.println("Advertising...");
+  }
 }
 
 void wait_for_serial(int time) {
