@@ -13,7 +13,8 @@ sensor_data = defaultdict(dict)
 sensor_queue = asyncio.Queue()
 
 # Shared device store
-discovered_devices = []
+discovered_devices = [] # Will hold results of discover() scans, i.e. `discovered_devices` data, per API.
+connected_devices = [] # Will hold connected BleakClient instances, per API.
 
 app = FastAPI()
 
@@ -47,6 +48,11 @@ async def ble_manager():
                 # Check if we're connected
                 if client.is_connected:
                     print(f"{device.name} - {device.address} is connected")
+                else:
+                    print(f"Failed to connect to {device.name} - {device.address}")
+                    return
+
+                connected_devices.append(client) # Add to connected devices list
 
                 # Explore services
                 services = client.services or []
@@ -90,6 +96,7 @@ async def ble_manager():
                     # give some time before checking connection status again
                     await asyncio.sleep(1)
                     if not client.is_connected:
+                        connected_devices.remove(client)
                         print("Device disconnected.")
                         break
 
@@ -112,7 +119,11 @@ async def scan_devices():
     # Find devices, filter them by name to only find LeakSeeks, then store them globally.
     devices = await BleakScanner.discover()
     raw_devices = [d for d in devices if d.name and "LeakSeek" in d.name]
-    formatted_device_list = {"devices": [{"name": d.name, "address": d.address} for d in raw_devices]}
+    formatted_device_list = {"scanned": 
+                             [{"name": d.name, "address": d.address} for d in raw_devices],
+                             "connected":
+                             [{"name": c.name, "address": c.address} for c in connected_devices]
+                            }
 
     # We save the raw devices for potential future use, and return a format that we can JSONify for our API.
     discovered_devices.extend(raw_devices)
