@@ -13,3 +13,10 @@
 // #define UUID16_CHR_ALERT_STATUS                               0x2A3F
 #define CHARACTERISTIC_UUID UUID16_CHR_ALERT_STATUS
 
+// Debug Macro
+
+#ifdef DEBUG
+#define DEBUG_PRINT(...) if (Serial) { Serial.println(__VA_ARGS__); }
+#else
+#define DEBUG_PRINT(...) do {} while (0)
+#endif 

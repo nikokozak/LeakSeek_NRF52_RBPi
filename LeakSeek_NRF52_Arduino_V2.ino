@@ -1,4 +1,5 @@
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
+#define DEBUG t
 
 #include <bluefruit.h>
 #include "config.h"
@@ -15,10 +16,9 @@ void setup() {
   Serial.begin(115200);
   wait_for_serial(2000); // Wait for serial startup, continue regardless.
 
-  if (Serial) {
-    Serial.println("LeakSeek debug console");
-    Serial.println("-----------------------\n");
-  }
+  DEBUG_PRINT("LeakSeek debug console");
+  DEBUG_PRINT("-----------------------\n");
+
   // Start the BLE module
   // Max conns as Periph, Max conns as Central
   Bluefruit.begin(1, 0); 
@@ -28,9 +28,8 @@ void setup() {
   setup_service();
   setup_peripheral();
   start_advertising();
-  if (Serial) {
-    Serial.println("Waiting for connections...");
-  }
+  
+  DEBUG_PRINT("Waiting for connections...");
 }
 
 void loop() {
@@ -42,10 +41,10 @@ void loop() {
     // uint8_t state = digitalRead(LEAK_SENSOR_PIN); // Read sensor value
     uint8_t state = random(0, 2); // Simulate random state for testing
     leakseek_characteristic.indicate8(conn_handle, state); 
-    if (Serial) { Serial.print("Wrote state: "); }
-    Serial.println(state);
+    DEBUG_PRINT("Wrote state: ");
+    DEBUG_PRINT(state);
   } else {
-    if (Serial) { Serial.println("Not connected"); }
+    DEBUG_PRINT("Not connected");
   }
 
   delay(1000);
@@ -119,18 +118,16 @@ void connect_callback(uint16_t conn_handle) {
   // Get central name
   char central_name[32] = { 0 };
   connection->getPeerName(central_name, sizeof(central_name));
-  if (Serial) { Serial.println(central_name); }
+  DEBUG_PRINT(central_name);
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void) conn_handle;
   (void) reason;
 
-  if (Serial) { 
-    Serial.println("Disconnected, reason = 0x");
-    Serial.println(reason, HEX);
-    Serial.println("Advertising...");
-  }
+  DEBUG_PRINT("Disconnected, reason = 0x");
+  DEBUG_PRINT(reason, HEX);
+  DEBUG_PRINT("Advertising...");
 }
 
 void wait_for_serial(int time) {

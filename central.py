@@ -12,6 +12,9 @@ import time
 sensor_data = defaultdict(dict)
 sensor_queue = asyncio.Queue()
 
+# Shared device store
+discovered_devices = []
+
 app = FastAPI()
 
 async def indication_handler(sender, data):
@@ -97,3 +100,21 @@ async def startup_event():
 @app.get("/sensor_data")
 async def get_sensor_data():
     return dict(sensor_data)
+
+# Scan for LeakSeek devices
+# Returns only devices with names matching LeakSeek pattern
+# Importantly, does not connect to the devices
+@app.get("/scan")
+async def scan_devices():
+    global discovered_devices
+    discovered_devices.clear() # Reset the list each time we scan
+
+    # Find devices, filter them by name to only find LeakSeeks, then store them globally.
+    devices = await BleakScanner.discover()
+    raw_devices = [d for d in devices if d.name and "LeakSeek" in d.name]
+    formatted_device_list = {"devices": [{"name": d.name, "address": d.address} for d in raw_devices]}
+
+    # We save the raw devices for potential future use, and return a format that we can JSONify for our API.
+    discovered_devices.extend(raw_devices)
+    return formatted_device_list
+
