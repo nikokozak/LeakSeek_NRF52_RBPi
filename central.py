@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from collections import defaultdict
 import json as JSON
 import time
+import utils
 
 # TODO: We need to refine the queue and shared dict a bit, this is a basic implementation
 
@@ -13,7 +14,7 @@ sensor_data = defaultdict(dict)
 sensor_queue = asyncio.Queue()
 
 # Shared device store
-connected_devices = []
+connected_devices = {}  # Dict keyed by address for easy lookup
 discovered_devices = []
 
 app = FastAPI()
@@ -26,12 +27,13 @@ async def indication_handler(sender, data):
     value = int.from_bytes(data, byteorder='little')
     # Put the new sensor data into the queue
     await sensor_queue.put({"sender": sender, "value": value})
-    print(f"Indication from {sender}: {value}")
+    # print(f"Indication from {sender}: {value}")
 
 '''
 Scan for devices with a specific name, e.g. "LeakSeek"
 Operates for a specified timeout period (default 5 seconds)
 Populates the global discovered_devices list with found devices
+If it comes across a registered device, it'll connect to it automatically
 '''
 async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
     global discovered_devices
@@ -56,7 +58,14 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
 
             if not any(d.address == device.address for d in discovered_devices):
                 discovered_devices.append(device)
-                print(f"Discovered device: {device.name}, {device.address}")
+
+                # If the device is registered, print a message, and auto-connect
+                if utils.device_exists(device.address):
+                    asyncio.create_task(connect_to_device(device.address))
+                    print(f"Discovered registered device: {device.name}, {device.address}")
+                
+                else:
+                    print(f"Discovered new device: {device.name}, {device.address}")
 
     async with BleakScanner(detection_callback) as _scanner:
         # Runs continually until timeout
@@ -71,7 +80,7 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
     async with BleakClient(address) as client:
         if client.is_connected:
             print(f"Connected to device at {address}")
-            connected_devices.append(client)
+            connected_devices[address] = client
 
             services = client.services or []
             service_uuid = None # Alert Notification Service
@@ -116,7 +125,7 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
                 # give some time before checking connection status again
                 await asyncio.sleep(1)
                 if not client.is_connected:
-                    connected_devices.remove(client)
+                    del connected_devices[address]
                     print("Device disconnected.")
                     break
 
@@ -150,19 +159,51 @@ async def get_discovered_devices():
 
 @app.get("/connected_devices")
 async def get_connected_devices():
-    devices_info = [{"name": device.address, "address": device.address} for device in connected_devices]
+    devices_info = [{"name": device.name, "address": device.address} for device in connected_devices.values()]
     return devices_info
 
-@app.post("/connect/{address}")
-async def connect(address: str):
+@app.get("/registered_devices")
+async def get_registered_devices():
+    devices = utils.load_data()
+    return [{"name": device["name"], "address": device["address"]} for device in devices.values()]
+
+@app.post("/register/{address}")
+async def register(address: str, name: str):
+    # Check if device is already registered
+    device_exists = utils.device_exists(address)
+    if device_exists:
+        return {"status": "already registered", "address": address, "name": name}
+
     # Check if already connected
-    for device in connected_devices:
-        if device.address == address:
-            return {"status": "already connected", "address": address}
+    if address in connected_devices:
+        return {"status": "already connected", "address": address, "name": name}
     
     # Attempt to connect to the device
-    client = await connect_to_device(address)
-    if client:
-        return {"status": "connected", "address": address}
+    asyncio.create_task(connect_to_device(address))
+    if not device_exists:
+        utils.add_device(address, name) # Save to local storage
+
+        return {"status": "connected", "address": address, "name": name}
     else:
         return {"status": "failed to connect", "address": address}
+
+@app.post("/unregister/{address}")
+async def unregister(address: str):
+    if utils.device_exists(address):
+        utils.remove_device(address)
+        
+        # Disconnect if currently connected
+        if address in connected_devices:
+            await connected_devices[address].disconnect()
+        
+        return {"status": "unregistered", "address": address}
+    else:
+        return {"status": "not found", "address": address}
+
+@app.post("/unregister_all")
+async def unregister_all():
+    utils.clear_data()
+    for address in list(connected_devices.keys()):
+        await connected_devices[address].disconnect()
+    connected_devices.clear()
+    return {"status": "all devices unregistered"}
