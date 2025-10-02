@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=480, initial-scale=1.0, user-scalable=no">
+    <title>LeakSeek</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Main Screen: Sensor List -->
+    <div id="main-screen" class="screen active">
+        <header>
+            <h1>LeakSeek</h1>
+            <button id="menu-btn" class="icon-btn">☰</button>
+        </header>
+        
+        <div id="sensor-list" class="sensor-list">
+            <!-- Sensors will be injected here -->
+        </div>
+        
+        <div id="empty-state" class="empty-state">
+            <p>No sensors registered</p>
+            <button id="discover-btn" class="btn btn-primary">Discover Sensors</button>
+        </div>
+    </div>
+
+    <!-- Discover Screen: Unregistered Sensors -->
+    <div id="discover-screen" class="screen">
+        <header>
+            <button id="back-btn" class="icon-btn">←</button>
+            <h1>Discover Sensors</h1>
+            <button id="refresh-btn" class="icon-btn">↻</button>
+        </header>
+        
+        <div id="discovered-list" class="sensor-list">
+            <!-- Discovered sensors will be injected here -->
+        </div>
+        
+        <div id="discovering-state" class="empty-state">
+            <p>Scanning for sensors...</p>
+        </div>
+    </div>
+
+    <!-- Sensor Detail Screen -->
+    <div id="sensor-detail-screen" class="screen">
+        <header>
+            <button id="detail-back-btn" class="icon-btn">←</button>
+            <h1 id="sensor-detail-name"></h1>
+        </header>
+        
+        <div class="detail-content">
+            <div class="detail-section">
+                <label>Status</label>
+                <p id="sensor-detail-status" class="status-value"></p>
+            </div>
+            
+            <div class="detail-section">
+                <label>Address</label>
+                <p id="sensor-detail-address" class="mono"></p>
+            </div>
+            
+            <div class="detail-section">
+                <label>Last Update</label>
+                <p id="sensor-detail-timestamp"></p>
+            </div>
+            
+            <div class="detail-actions">
+                <button id="rename-sensor-btn" class="btn btn-secondary">Rename</button>
+                <button id="forget-sensor-btn" class="btn btn-danger">Forget Sensor</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Menu Overlay -->
+    <div id="menu-overlay" class="overlay">
+        <div class="overlay-content">
+            <h2>Menu</h2>
+            <button id="menu-discover" class="btn btn-secondary">Discover Sensors</button>
+            <button id="menu-debug" class="btn btn-secondary">Toggle Debug</button>
+            <button id="menu-close" class="btn">Close</button>
+        </div>
+    </div>
+
+    <!-- Debug Console -->
+    <div id="debug-console" class="debug-console">
+        <div class="debug-header">
+            <span>Debug Console</span>
+            <button id="debug-close">×</button>
+        </div>
+        <div id="debug-output" class="debug-output"></div>
+    </div>
+
+    <!-- On-Screen Keyboard -->
+    <div id="keyboard-overlay" class="overlay">
+        <div class="keyboard-container">
+            <div class="keyboard-input-row">
+                <input type="text" id="keyboard-input" placeholder="Sensor name" maxlength="16">
+                <button id="keyboard-clear" class="btn-sm">Clear</button>
+            </div>
+            <div id="keyboard" class="keyboard"></div>
+            <div class="keyboard-actions">
+                <button id="keyboard-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="keyboard-submit" class="btn btn-primary">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="api.js"></script>
+    <script src="keyboard.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+

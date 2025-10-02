@@ -2,6 +2,7 @@ import asyncio
 from bleak import BleakScanner, BleakClient
 from typing import Union
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from collections import defaultdict
 import json as JSON
 import time
@@ -18,6 +19,15 @@ connected_devices = {}  # Dict keyed by address for easy lookup
 discovered_devices = []
 
 app = FastAPI()
+
+# Add CORS middleware to allow web interface
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 '''
 Handle incoming indications from the BLE device
@@ -207,3 +217,11 @@ async def unregister_all():
         await connected_devices[address].disconnect()
     connected_devices.clear()
     return {"status": "all devices unregistered"}
+
+@app.post("/rename/{address}")
+async def rename_device(address: str, new_name: str):
+    if utils.device_exists(address):
+        utils.rename_device(address, new_name)
+        return {"status": "renamed", "address": address, "new_name": new_name}
+    else:
+        return {"status": "not found", "address": address}

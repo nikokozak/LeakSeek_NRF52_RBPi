@@ -38,3 +38,9 @@ def remove_device(address):
 def device_exists(address):
     devices = load_data()
     return address in devices
+
+def rename_device(address, new_name):
+    devices = load_data()
+    if address in devices:
+        devices[address]["name"] = new_name
+        save_data(devices)
