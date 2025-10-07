@@ -1,0 +1,13 @@
+# LeakSeek Server Requirements
+# Minimal dependencies for Raspberry Pi Zero W 1.1
+
+# Web framework
+Flask==2.3.3
+flask-cors==4.0.0
+
+# Bluetooth Low Energy
+bleak==0.21.1
+
+# Note: Python 3.9+ required for best Bleak compatibility
+# Install with: pip3 install -r requirements.txt
+

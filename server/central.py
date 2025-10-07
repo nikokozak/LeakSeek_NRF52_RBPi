@@ -1,33 +1,36 @@
 import asyncio
 from bleak import BleakScanner, BleakClient
 from typing import Union
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 from collections import defaultdict
 import json as JSON
 import time
+import threading
+import os
 import utils
 
 # TODO: We need to refine the queue and shared dict a bit, this is a basic implementation
 
 # Shared sensor data store
 sensor_data = defaultdict(dict)
-sensor_queue = asyncio.Queue()
+sensor_queue = None  # Will be initialized in the async thread
 
 # Shared device store
 connected_devices = {}  # Dict keyed by address for easy lookup
 discovered_devices = []
 
-app = FastAPI()
+# Thread-safe locks for shared data
+data_lock = threading.Lock()
 
-# Add CORS middleware to allow web interface
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your domains
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Event loop for async operations
+loop = None
+loop_thread = None
+
+app = Flask(__name__, static_folder='../web', static_url_path='')
+
+# Add CORS support to allow web interface
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 '''
 Handle incoming indications from the BLE device
@@ -54,9 +57,10 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
         await asyncio.sleep(timeout)
         # Compare newly discovered devices and global list,
         # Remove any elements in global list that are not in newly discovered list
-        for device in discovered_devices[:]:
-            if not any(d.address == device.address for d in newly_discovered_devices):
-                discovered_devices.remove(device)
+        with data_lock:
+            for device in discovered_devices[:]:
+                if not any(d.address == device.address for d in newly_discovered_devices):
+                    discovered_devices.remove(device)
         stop_event.set()
 
     asyncio.create_task(stop_after_timeout())
@@ -66,16 +70,17 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
             if not any(d.address == device.address for d in newly_discovered_devices):
                 newly_discovered_devices.append(device)
 
-            if not any(d.address == device.address for d in discovered_devices):
-                discovered_devices.append(device)
+            with data_lock:
+                if not any(d.address == device.address for d in discovered_devices):
+                    discovered_devices.append(device)
 
-                # If the device is registered, print a message, and auto-connect
-                if utils.device_exists(device.address):
-                    asyncio.create_task(connect_to_device(device.address))
-                    print(f"Discovered registered device: {device.name}, {device.address}")
-                
-                else:
-                    print(f"Discovered new device: {device.name}, {device.address}")
+                    # If the device is registered, print a message, and auto-connect
+                    if utils.device_exists(device.address):
+                        asyncio.create_task(connect_to_device(device.address))
+                        print(f"Discovered registered device: {device.name}, {device.address}")
+                    
+                    else:
+                        print(f"Discovered new device: {device.name}, {device.address}")
 
     async with BleakScanner(detection_callback) as _scanner:
         # Runs continually until timeout
@@ -90,7 +95,8 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
     async with BleakClient(address) as client:
         if client.is_connected:
             print(f"Connected to device at {address}")
-            connected_devices[address] = client
+            with data_lock:
+                connected_devices[address] = client
 
             services = client.services or []
             service_uuid = None # Alert Notification Service
@@ -127,15 +133,17 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
                 # Get the latest sensor update from the queue
                 sensor_update = await sensor_queue.get()
                 # Update the shared sensor data store
-                sensor_data[client.address] = {
-                    "value": sensor_update["value"],
-                    "timestamp": time.time()
-                }
+                with data_lock:
+                    sensor_data[client.address] = {
+                        "value": sensor_update["value"],
+                        "timestamp": time.time()
+                    }
 
                 # give some time before checking connection status again
                 await asyncio.sleep(1)
                 if not client.is_connected:
-                    del connected_devices[address]
+                    with data_lock:
+                        del connected_devices[address]
                     print("Device disconnected.")
                     break
 
@@ -144,84 +152,147 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
             return None
 
 async def main():
+    global sensor_queue
+    # Initialize the queue in the async context
+    sensor_queue = asyncio.Queue()
+    
     while True:
         await scanner(5)
 
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(main())
+'''
+Run the asyncio event loop in a background thread
+This allows Bleak to operate asynchronously while Flask handles HTTP synchronously
+'''
+def run_async_loop():
+    global loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
 
-@app.get("/sensor_data")
-async def get_sensor_data():
-    return dict(sensor_data)
+'''
+Start the background thread for BLE operations
+Called when Flask app starts
+'''
+def start_ble_background():
+    global loop_thread
+    loop_thread = threading.Thread(target=run_async_loop, daemon=True)
+    loop_thread.start()
+    print("BLE background thread started")
 
-@app.get("/sensor_data/{address}")
-async def get_sensor_data_by_address(address: str):
-    if address in sensor_data:
-        return sensor_data[address]
-    else:
-        return {"error": "Device not found"}
+'''
+Helper function to schedule coroutines in the async thread
+'''
+def schedule_coroutine(coro):
+    if loop and loop.is_running():
+        asyncio.run_coroutine_threadsafe(coro, loop)
 
-@app.get("/discovered_devices")
-async def get_discovered_devices():
-    devices_info = [{"name": device.name, "address": device.address} for device in discovered_devices]
-    return devices_info
+# =============================================================================
+# Flask Routes
+# =============================================================================
 
-@app.get("/connected_devices")
-async def get_connected_devices():
-    devices_info = [{"name": device.name, "address": device.address} for device in connected_devices.values()]
-    return devices_info
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index.html')
 
-@app.get("/registered_devices")
-async def get_registered_devices():
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory(app.static_folder, path)
+
+@app.route("/sensor_data", methods=['GET'])
+def get_sensor_data():
+    with data_lock:
+        return jsonify(dict(sensor_data))
+
+@app.route("/sensor_data/<address>", methods=['GET'])
+def get_sensor_data_by_address(address):
+    with data_lock:
+        if address in sensor_data:
+            return jsonify(sensor_data[address])
+        else:
+            return jsonify({"error": "Device not found"}), 404
+
+@app.route("/discovered_devices", methods=['GET'])
+def get_discovered_devices():
+    with data_lock:
+        devices_info = [{"name": device.name, "address": device.address} for device in discovered_devices]
+    return jsonify(devices_info)
+
+@app.route("/connected_devices", methods=['GET'])
+def get_connected_devices():
+    with data_lock:
+        devices_info = [{"name": device.name, "address": device.address} for device in connected_devices.values()]
+    return jsonify(devices_info)
+
+@app.route("/registered_devices", methods=['GET'])
+def get_registered_devices():
     devices = utils.load_data()
-    return [{"name": device["name"], "address": device["address"]} for device in devices.values()]
+    return jsonify([{"name": device["name"], "address": device["address"]} for device in devices.values()])
 
-@app.post("/register/{address}")
-async def register(address: str, name: str):
+@app.route("/register/<address>", methods=['POST'])
+def register(address):
+    name = request.args.get('name', 'Unnamed Device')
+    
     # Check if device is already registered
     device_exists = utils.device_exists(address)
     if device_exists:
-        return {"status": "already registered", "address": address, "name": name}
+        return jsonify({"status": "already registered", "address": address, "name": name})
 
     # Check if already connected
-    if address in connected_devices:
-        return {"status": "already connected", "address": address, "name": name}
+    with data_lock:
+        if address in connected_devices:
+            return jsonify({"status": "already connected", "address": address, "name": name})
     
     # Attempt to connect to the device
-    asyncio.create_task(connect_to_device(address))
+    schedule_coroutine(connect_to_device(address))
     if not device_exists:
-        utils.add_device(address, name) # Save to local storage
-
-        return {"status": "connected", "address": address, "name": name}
+        utils.add_device(address, name)  # Save to local storage
+        return jsonify({"status": "connected", "address": address, "name": name})
     else:
-        return {"status": "failed to connect", "address": address}
+        return jsonify({"status": "failed to connect", "address": address})
 
-@app.post("/unregister/{address}")
-async def unregister(address: str):
+@app.route("/unregister/<address>", methods=['POST'])
+def unregister(address):
     if utils.device_exists(address):
         utils.remove_device(address)
         
         # Disconnect if currently connected
-        if address in connected_devices:
-            await connected_devices[address].disconnect()
+        with data_lock:
+            if address in connected_devices:
+                client = connected_devices[address]
+                # Schedule disconnect in the async loop
+                schedule_coroutine(client.disconnect())
         
-        return {"status": "unregistered", "address": address}
+        return jsonify({"status": "unregistered", "address": address})
     else:
-        return {"status": "not found", "address": address}
+        return jsonify({"status": "not found", "address": address}), 404
 
-@app.post("/unregister_all")
-async def unregister_all():
+@app.route("/unregister_all", methods=['POST'])
+def unregister_all():
     utils.clear_data()
-    for address in list(connected_devices.keys()):
-        await connected_devices[address].disconnect()
-    connected_devices.clear()
-    return {"status": "all devices unregistered"}
+    with data_lock:
+        for address in list(connected_devices.keys()):
+            client = connected_devices[address]
+            schedule_coroutine(client.disconnect())
+        connected_devices.clear()
+    return jsonify({"status": "all devices unregistered"})
 
-@app.post("/rename/{address}")
-async def rename_device(address: str, new_name: str):
+@app.route("/rename/<address>", methods=['POST'])
+def rename_device(address):
+    new_name = request.args.get('new_name', '')
     if utils.device_exists(address):
         utils.rename_device(address, new_name)
-        return {"status": "renamed", "address": address, "new_name": new_name}
+        return jsonify({"status": "renamed", "address": address, "new_name": new_name})
     else:
-        return {"status": "not found", "address": address}
+        return jsonify({"status": "not found", "address": address}), 404
+
+# =============================================================================
+# Application Entry Point
+# =============================================================================
+
+if __name__ == '__main__':
+    # Start BLE operations in background thread
+    start_ble_background()
+    
+    # Run Flask app
+    # For production on Pi Zero, use: app.run(host='0.0.0.0', port=80, debug=False)
+    app.run(host='0.0.0.0', port=2300, debug=True)
