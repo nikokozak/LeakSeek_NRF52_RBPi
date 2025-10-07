@@ -90,9 +90,17 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
                         print(f"*** Discovered new device: {device.name}, {device.address}")
 
     print(f"Starting BLE scan for devices containing '{device_name}'...")
-    async with BleakScanner(detection_callback) as _scanner:
-        # Runs continually until timeout
-        await stop_event.wait()
+    scanner = BleakScanner(detection_callback)
+    
+    print("Scanner created, calling start()...")
+    await scanner.start()
+    print("Scanner started successfully, waiting for timeout...")
+    
+    await stop_event.wait()
+    
+    print("Timeout reached, stopping scanner...")
+    await scanner.stop()
+    print("Scanner stopped")
 
 '''
 async def connect_to_device(address: str) -> Union[BleakClient, None]:
