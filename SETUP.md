@@ -53,25 +53,55 @@ pip3 install --upgrade pip
 pip3 install -r requirements.txt
 ```
 
-## 3. Test the Server
+## 3. Configure Bluetooth
+
+Ensure Bluetooth starts automatically and stays powered on:
+
+```bash
+sudo nano /etc/bluetooth/main.conf
+```
+
+Add/uncomment in the `[Policy]` section:
+```
+[Policy]
+AutoEnable=true
+```
+
+Restart Bluetooth:
+```bash
+sudo systemctl restart bluetooth
+```
+
+Make the BLE init script executable:
+```bash
+cd /home/pi/LeakSeek_NRF52_RBPi/server
+chmod +x ble_init.sh
+```
+
+## 4. Test the Server
 
 Before setting up as a service, test that everything works:
 
 ```bash
 cd /home/pi/LeakSeek_NRF52_RBPi/server
 source venv/bin/activate
+
+# Initialize Bluetooth adapter
+sudo ./ble_init.sh
+
+# Run the server
 python3 central.py
 ```
 
 You should see:
 - "BLE background thread started"
-- Flask server running on port 5000
+- Flask server running on port 2300
 
-Test from another device on the same network by visiting: `http://<pi-ip-address>:5000`
+Test from another device on the same network by visiting: `http://<pi-ip-address>:2300`
 
 Press Ctrl+C to stop.
 
-## 4. Create Systemd Service
+## 5. Create Systemd Service
 
 This makes the server start automatically on boot.
 
@@ -94,6 +124,8 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/LeakSeek_NRF52_RBPi/server
 Environment="PATH=/home/pi/LeakSeek_NRF52_RBPi/server/venv/bin"
+# Initialize Bluetooth adapter before starting
+ExecStartPre=/home/pi/LeakSeek_NRF52_RBPi/server/ble_init.sh
 ExecStart=/home/pi/LeakSeek_NRF52_RBPi/server/venv/bin/python3 central.py
 Restart=always
 RestartSec=10
@@ -134,7 +166,7 @@ sudo systemctl stop leakseek.service
 sudo systemctl disable leakseek.service
 ```
 
-## 5. Captive Portal Setup
+## 6. Captive Portal Setup
 
 This allows users to connect directly to the Pi's WiFi and access the LeakSeek interface without internet.
 
@@ -289,7 +321,7 @@ After reboot:
 3. Browser should automatically open captive portal
 4. If not, manually visit: `http://192.168.4.1` or `http://leakseek.local`
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 ### Service Won't Start
 
@@ -305,6 +337,36 @@ sudo journalctl -u leakseek.service -n 50
 
 ### Bluetooth Issues
 
+**Adapter not powered:**
+```bash
+# Run the BLE init script
+cd /home/pi/LeakSeek_NRF52_RBPi/server
+sudo ./ble_init.sh
+
+# Or manually:
+sudo rfkill unblock bluetooth
+sudo hciconfig hci0 up
+echo -e "power on\nquit" | sudo bluetoothctl
+
+# Verify
+bluetoothctl show
+```
+
+**BlueZ "Operation already in progress" error:**
+
+This is a race condition where scans start too quickly. The code now includes delays and error handling, but if you still see it:
+
+```bash
+# Restart Bluetooth to clear state
+sudo systemctl restart bluetooth
+sleep 2
+sudo ./ble_init.sh
+
+# Restart the service
+sudo systemctl restart leakseek.service
+```
+
+**Other Bluetooth issues:**
 ```bash
 # Check Bluetooth status
 sudo systemctl status bluetooth
@@ -349,7 +411,7 @@ sudo iptables -L
 curl http://localhost:80
 ```
 
-## 7. Performance Optimization for Pi Zero W
+## 8. Performance Optimization for Pi Zero W
 
 The Pi Zero W has limited resources (512MB RAM, single-core 1GHz). Here are some tips:
 
@@ -386,7 +448,7 @@ top
 sudo systemctl status leakseek.service
 ```
 
-## 8. Updating the Code
+## 9. Updating the Code
 
 When you update the code:
 
@@ -399,7 +461,7 @@ sudo systemctl stop leakseek.service
 sudo systemctl start leakseek.service
 ```
 
-## 9. Security Notes
+## 10. Security Notes
 
 - The default setup has no authentication
 - Captive portal is open to anyone in WiFi range

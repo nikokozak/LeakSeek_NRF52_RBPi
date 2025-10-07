@@ -157,7 +157,14 @@ async def main():
     sensor_queue = asyncio.Queue()
     
     while True:
-        await scanner(5)
+        try:
+            await scanner(5)
+            # Small delay between scans to let BlueZ clean up
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            print(f"Scanner error: {e}")
+            # Wait a bit longer on error before retrying
+            await asyncio.sleep(2)
 
 '''
 Run the asyncio event loop in a background thread
