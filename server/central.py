@@ -158,19 +158,23 @@ async def main():
     
     print("Starting BLE scanner loop...")
     
+    # Give BlueZ time to initialize
+    await asyncio.sleep(2)
+    
     while True:
         try:
             print("Starting scan...")
             await scanner(5)
             print("Scan completed")
-            # Small delay between scans to let BlueZ clean up
-            await asyncio.sleep(0.5)
+            # Longer delay between scans to let BlueZ fully clean up
+            await asyncio.sleep(2)
         except Exception as e:
             print(f"Scanner error: {e}")
             import traceback
             traceback.print_exc()
-            # Wait a bit longer on error before retrying
-            await asyncio.sleep(2)
+            # Wait longer on error before retrying
+            print("Waiting 5 seconds before retry...")
+            await asyncio.sleep(5)
 
 '''
 Run the asyncio event loop in a background thread
