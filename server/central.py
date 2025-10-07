@@ -143,8 +143,37 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
         await asyncio.sleep(1)
     
     try:
-        print(f"[{address}] Creating BleakClient...")
-        async with BleakClient(address, timeout=15.0) as client:
+        # First, discover the device to register it with BlueZ
+        print(f"[{address}] Discovering device...")
+        discovered_device = None
+        
+        async with BleakScanner() as scanner:
+            await asyncio.sleep(3)  # Scan for 3 seconds
+            devices = await scanner.discover()
+            for d in devices:
+                if d.address.upper() == address.upper():
+                    discovered_device = d
+                    print(f"[{address}] ✓ Device found in discovery")
+                    break
+        
+        if not discovered_device:
+            print(f"[{address}] ✗ Device not found in discovery scan")
+            return None
+        
+        # Small delay after discovery
+        await asyncio.sleep(0.5)
+        
+        print(f"[{address}] Creating BleakClient (timeout=15s)...")
+        
+        # Connect using the discovered device object (not just address)
+        try:
+            client = BleakClient(discovered_device, timeout=15.0)
+            await asyncio.wait_for(client.connect(), timeout=20.0)
+        except asyncio.TimeoutError:
+            print(f"[{address}] ✗ Connection timed out after 20 seconds")
+            return None
+        
+        try:
             if client.is_connected:
                 print(f"[{address}] ✓ Connected successfully")
                 with data_lock:
@@ -216,7 +245,14 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
 
             else:
                 print(f"[{address}] ✗ Failed to connect")
+                await client.disconnect()
                 return None
+        finally:
+            # Ensure we disconnect
+            try:
+                await client.disconnect()
+            except:
+                pass
                 
     except Exception as e:
         print(f"[{address}] ✗ Connection error: {e}")
