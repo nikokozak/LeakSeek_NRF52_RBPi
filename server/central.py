@@ -52,6 +52,7 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
     global discovered_devices
     stop_event = asyncio.Event()
     newly_discovered_devices = []
+    all_devices_seen = []
 
     async def stop_after_timeout():
         await asyncio.sleep(timeout)
@@ -61,11 +62,17 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
             for device in discovered_devices[:]:
                 if not any(d.address == device.address for d in newly_discovered_devices):
                     discovered_devices.remove(device)
+        print(f"Scan timeout - saw {len(all_devices_seen)} total devices, {len(newly_discovered_devices)} matching '{device_name}'")
         stop_event.set()
 
     asyncio.create_task(stop_after_timeout())
 
     def detection_callback(device, _advertisement_data):
+        # Log ALL devices seen for debugging
+        if device not in all_devices_seen:
+            all_devices_seen.append(device)
+            print(f"BLE device detected: {device.name or 'Unknown'} ({device.address})")
+        
         if device.name and device_name in device.name:
             if not any(d.address == device.address for d in newly_discovered_devices):
                 newly_discovered_devices.append(device)
@@ -77,11 +84,12 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
                     # If the device is registered, print a message, and auto-connect
                     if utils.device_exists(device.address):
                         asyncio.create_task(connect_to_device(device.address))
-                        print(f"Discovered registered device: {device.name}, {device.address}")
+                        print(f"*** Discovered registered device: {device.name}, {device.address}")
                     
                     else:
-                        print(f"Discovered new device: {device.name}, {device.address}")
+                        print(f"*** Discovered new device: {device.name}, {device.address}")
 
+    print(f"Starting BLE scan for devices containing '{device_name}'...")
     async with BleakScanner(detection_callback) as _scanner:
         # Runs continually until timeout
         await stop_event.wait()
