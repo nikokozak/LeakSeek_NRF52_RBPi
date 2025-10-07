@@ -108,64 +108,88 @@ Connects to a device by address, returns the BleakClient instance if successful
 Also subscribes to indications from a specific characteristic
 '''
 async def connect_to_device(address: str) -> Union[BleakClient, None]:
-    async with BleakClient(address) as client:
-        if client.is_connected:
-            print(f"Connected to device at {address}")
-            with data_lock:
-                connected_devices[address] = client
-
-            services = client.services or []
-            service_uuid = None # Alert Notification Service
-            characteristic_uuid = None  # New Alert
-
-            # Look for the service and characteristic we want
-            for service in services:
-
-                if service.uuid.startswith("00001811"): # Alert Notification Service
-                    print(f"{service.uuid}: Found Alert Notification Service")
-                    service_uuid = service.uuid # Save the service UUID
-
-                    # Do the same for characteristics
-                    for char in service.characteristics:
-                        if char.uuid.startswith("00002a3f"): # New Alert
-                            characteristic_uuid = char.uuid # Save the characteristic UUID
-            
-            # If we found the service and characteristic, read the characteristic
-            if service_uuid and characteristic_uuid:
-                print(f"  Characteristic: {characteristic_uuid}, Properties: {char.properties}")
-                char_data = await client.read_gatt_char(characteristic_uuid)
-                char_value = int.from_bytes(char_data, byteorder='little')
-                print(f"    Value: {char_value}")
-            else:
-                print("Could not find the service or characteristic.")
-                return
-
-            # Subscribe to indications from the characteristic
-            await client.start_notify(characteristic_uuid, indication_handler)
-            print("Subscribed to indications. Waiting....")
-
-            # Keep the script running to receive indications
-            while True:
-                # Get the latest sensor update from the queue
-                sensor_update = await sensor_queue.get()
-                # Update the shared sensor data store
+    print(f"[{address}] Attempting to connect...")
+    
+    try:
+        async with BleakClient(address, timeout=20.0) as client:
+            if client.is_connected:
+                print(f"[{address}] ✓ Connected successfully")
                 with data_lock:
-                    sensor_data[client.address] = {
-                        "value": sensor_update["value"],
-                        "timestamp": time.time()
-                    }
+                    connected_devices[address] = client
 
-                # give some time before checking connection status again
-                await asyncio.sleep(1)
-                if not client.is_connected:
+                services = client.services or []
+                print(f"[{address}] Found {len(services)} services")
+                
+                service_uuid = None # Alert Notification Service
+                characteristic_uuid = None  # New Alert
+
+                # Look for the service and characteristic we want
+                for service in services:
+                    print(f"[{address}]   Service: {service.uuid}")
+                    
+                    if service.uuid.startswith("00001811"): # Alert Notification Service
+                        print(f"[{address}] ✓ Found Alert Notification Service")
+                        service_uuid = service.uuid # Save the service UUID
+
+                        # Do the same for characteristics
+                        for char in service.characteristics:
+                            print(f"[{address}]     Characteristic: {char.uuid}, Properties: {char.properties}")
+                            if char.uuid.startswith("00002a3f"): # New Alert
+                                characteristic_uuid = char.uuid # Save the characteristic UUID
+                                print(f"[{address}] ✓ Found New Alert characteristic")
+                
+                # If we found the service and characteristic, read the characteristic
+                if service_uuid and characteristic_uuid:
+                    print(f"[{address}] Reading initial value from characteristic...")
+                    try:
+                        char_data = await client.read_gatt_char(characteristic_uuid)
+                        char_value = int.from_bytes(char_data, byteorder='little')
+                        print(f"[{address}] Initial value: {char_value}")
+                    except Exception as e:
+                        print(f"[{address}] ⚠ Could not read initial value: {e}")
+                else:
+                    print(f"[{address}] ✗ Could not find the service or characteristic")
+                    return
+
+                # Subscribe to indications from the characteristic
+                print(f"[{address}] Subscribing to indications...")
+                try:
+                    await client.start_notify(characteristic_uuid, indication_handler)
+                    print(f"[{address}] ✓ Subscribed to indications, waiting for data...")
+                except Exception as e:
+                    print(f"[{address}] ✗ Failed to subscribe: {e}")
+                    return
+
+                # Keep the script running to receive indications
+                while True:
+                    # Get the latest sensor update from the queue
+                    sensor_update = await sensor_queue.get()
+                    print(f"[{address}] Received sensor update: {sensor_update['value']}")
+                    
+                    # Update the shared sensor data store
                     with data_lock:
-                        del connected_devices[address]
-                    print("Device disconnected.")
-                    break
+                        sensor_data[client.address] = {
+                            "value": sensor_update["value"],
+                            "timestamp": time.time()
+                        }
 
-        else:
-            print(f"Failed to connect to device at {address}")
-            return None
+                    # give some time before checking connection status again
+                    await asyncio.sleep(1)
+                    if not client.is_connected:
+                        with data_lock:
+                            del connected_devices[address]
+                        print(f"[{address}] Device disconnected")
+                        break
+
+            else:
+                print(f"[{address}] ✗ Failed to connect")
+                return None
+                
+    except Exception as e:
+        print(f"[{address}] ✗ Connection error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 async def main():
     global sensor_queue
