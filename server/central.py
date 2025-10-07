@@ -156,13 +156,19 @@ async def main():
     # Initialize the queue in the async context
     sensor_queue = asyncio.Queue()
     
+    print("Starting BLE scanner loop...")
+    
     while True:
         try:
+            print("Starting scan...")
             await scanner(5)
+            print("Scan completed")
             # Small delay between scans to let BlueZ clean up
             await asyncio.sleep(0.5)
         except Exception as e:
             print(f"Scanner error: {e}")
+            import traceback
+            traceback.print_exc()
             # Wait a bit longer on error before retrying
             await asyncio.sleep(2)
 
@@ -172,9 +178,15 @@ This allows Bleak to operate asynchronously while Flask handles HTTP synchronous
 '''
 def run_async_loop():
     global loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(main())
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        print("Event loop created, starting main()...")
+        loop.run_until_complete(main())
+    except Exception as e:
+        print(f"FATAL ERROR in async loop: {e}")
+        import traceback
+        traceback.print_exc()
 
 '''
 Start the background thread for BLE operations

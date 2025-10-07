@@ -31,7 +31,7 @@ sudo systemctl start bluetooth
 ### Clone/Copy Project
 
 ```bash
-cd /home/pi
+cd /home/niko
 # Copy your LeakSeek project to this location
 # Should have: LeakSeek_NRF52_RBPi/server/ and LeakSeek_NRF52_RBPi/web/
 ```
@@ -41,7 +41,7 @@ cd /home/pi
 ### Create Virtual Environment
 
 ```bash
-cd /home/pi/LeakSeek_NRF52_RBPi/server
+cd /home/niko/LeakSeek_NRF52_RBPi
 python3 -m venv venv
 source venv/bin/activate
 ```
@@ -49,8 +49,10 @@ source venv/bin/activate
 ### Install Python Dependencies
 
 ```bash
+cd /home/niko/LeakSeek_NRF52_RBPi
+source venv/bin/activate
 pip3 install --upgrade pip
-pip3 install -r requirements.txt
+pip3 install -r server/requirements.txt
 ```
 
 ## 3. Configure Bluetooth
@@ -74,7 +76,7 @@ sudo systemctl restart bluetooth
 
 Make the BLE init script executable:
 ```bash
-cd /home/pi/LeakSeek_NRF52_RBPi/server
+cd /home/niko/LeakSeek_NRF52_RBPi/server
 chmod +x ble_init.sh
 ```
 
@@ -83,8 +85,9 @@ chmod +x ble_init.sh
 Before setting up as a service, test that everything works:
 
 ```bash
-cd /home/pi/LeakSeek_NRF52_RBPi/server
+cd /home/niko/LeakSeek_NRF52_RBPi
 source venv/bin/activate
+cd server
 
 # Initialize Bluetooth adapter
 sudo ./ble_init.sh
@@ -121,12 +124,12 @@ Requires=bluetooth.service
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/LeakSeek_NRF52_RBPi/server
-Environment="PATH=/home/pi/LeakSeek_NRF52_RBPi/server/venv/bin"
+User=niko
+WorkingDirectory=/home/niko/LeakSeek_NRF52_RBPi/server
+Environment="PATH=/home/niko/LeakSeek_NRF52_RBPi/venv/bin"
 # Initialize Bluetooth adapter before starting
-ExecStartPre=/home/pi/LeakSeek_NRF52_RBPi/server/ble_init.sh
-ExecStart=/home/pi/LeakSeek_NRF52_RBPi/server/venv/bin/python3 central.py
+ExecStartPre=/home/niko/LeakSeek_NRF52_RBPi/server/ble_init.sh
+ExecStart=/home/niko/LeakSeek_NRF52_RBPi/venv/bin/python3 /home/niko/LeakSeek_NRF52_RBPi/server/central.py
 Restart=always
 RestartSec=10
 
@@ -288,10 +291,10 @@ Change the `User=` line to:
 User=root
 ```
 
-Alternatively, use port 80 redirect via iptables (keeps service as user `pi`):
+Alternatively, use port 80 redirect via iptables (keeps service as user `niko`):
 
 ```bash
-sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 5000
+sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 2300
 ```
 
 To make iptables rule persistent:
@@ -340,7 +343,7 @@ sudo journalctl -u leakseek.service -n 50
 **Adapter not powered:**
 ```bash
 # Run the BLE init script
-cd /home/pi/LeakSeek_NRF52_RBPi/server
+cd /home/niko/LeakSeek_NRF52_RBPi/server
 sudo ./ble_init.sh
 
 # Or manually:
@@ -453,7 +456,7 @@ sudo systemctl status leakseek.service
 When you update the code:
 
 ```bash
-cd /home/pi/LeakSeek_NRF52_RBPi/server
+cd /home/niko/LeakSeek_NRF52_RBPi/server
 sudo systemctl stop leakseek.service
 
 # Update your code via git pull, scp, or direct edit
