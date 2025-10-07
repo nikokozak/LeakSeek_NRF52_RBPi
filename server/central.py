@@ -147,25 +147,35 @@ async def connect_to_device(address: str) -> Union[BleakClient, None]:
         print(f"[{address}] Discovering device...")
         discovered_device = None
         
-        async with BleakScanner() as scanner:
-            await asyncio.sleep(3)  # Scan for 3 seconds
-            devices = await scanner.discover()
+        try:
+            # Use BleakScanner.discover() with timeout
+            devices = await asyncio.wait_for(
+                BleakScanner.discover(timeout=5.0),
+                timeout=7.0
+            )
+            print(f"[{address}] Discovery found {len(devices)} devices")
+            
             for d in devices:
                 if d.address.upper() == address.upper():
                     discovered_device = d
                     print(f"[{address}] ✓ Device found in discovery")
                     break
+        except asyncio.TimeoutError:
+            print(f"[{address}] ⚠ Discovery timed out")
+        except Exception as e:
+            print(f"[{address}] ⚠ Discovery error: {e}")
         
         if not discovered_device:
-            print(f"[{address}] ✗ Device not found in discovery scan")
-            return None
+            print(f"[{address}] ⚠ Device not found in discovery, trying direct connection anyway...")
+            # Try direct connection with address as fallback
+            discovered_device = address
         
         # Small delay after discovery
         await asyncio.sleep(0.5)
         
         print(f"[{address}] Creating BleakClient (timeout=15s)...")
         
-        # Connect using the discovered device object (not just address)
+        # Connect using the discovered device object (or address if discovery failed)
         try:
             client = BleakClient(discovered_device, timeout=15.0)
             await asyncio.wait_for(client.connect(), timeout=20.0)
