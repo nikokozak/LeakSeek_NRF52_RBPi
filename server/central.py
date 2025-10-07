@@ -99,8 +99,12 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
     await stop_event.wait()
     
     print("Timeout reached, stopping scanner...")
-    await scanner.stop()
-    print("Scanner stopped")
+    try:
+        await scanner.stop()
+        print("Scanner stopped")
+    except Exception as e:
+        print(f"Warning: Error stopping scanner: {e}")
+        # Scanner stop failed, but we'll continue anyway
 
 '''
 async def connect_to_device(address: str) -> Union[BleakClient, None]:
@@ -201,18 +205,37 @@ async def main():
     # Give BlueZ time to initialize
     await asyncio.sleep(2)
     
+    consecutive_errors = 0
+    
     while True:
         try:
             print("Starting scan...")
             await scanner(5)
             print("Scan completed")
+            consecutive_errors = 0  # Reset error counter on success
             # Longer delay between scans to let BlueZ fully clean up
             await asyncio.sleep(2)
         except Exception as e:
-            print(f"Scanner error: {e}")
-            import traceback
-            traceback.print_exc()
-            # Wait longer on error before retrying
+            consecutive_errors += 1
+            print(f"Scanner error ({consecutive_errors} consecutive): {e}")
+            
+            # If we get 3 errors in a row, reset Bluetooth
+            if consecutive_errors >= 3:
+                print("!!! Too many consecutive errors, resetting Bluetooth...")
+                try:
+                    import subprocess
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'bluetooth'], check=True)
+                    await asyncio.sleep(3)
+                    # Re-initialize
+                    subprocess.run(['sudo', 'rfkill', 'unblock', 'bluetooth'], check=True)
+                    subprocess.run(['sudo', 'hciconfig', 'hci0', 'up'], check=True)
+                    await asyncio.sleep(2)
+                    consecutive_errors = 0
+                    print("Bluetooth reset complete, resuming...")
+                except Exception as reset_error:
+                    print(f"Failed to reset Bluetooth: {reset_error}")
+            
+            # Wait before retrying
             print("Waiting 5 seconds before retry...")
             await asyncio.sleep(5)
 
