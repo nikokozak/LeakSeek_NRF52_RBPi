@@ -2,7 +2,7 @@
 // Manages state, UI updates, and polling
 
 // Configuration
-const POLL_INTERVAL = 2000; // 2 seconds
+const POLL_INTERVAL = 500; // 500ms - faster updates for Pi Zero
 const LEAK_THRESHOLD = 1; // Value indicating a leak
 
 // State
@@ -297,19 +297,26 @@ async function refreshDiscovered() {
       debug.log(`Scan status: ${scanResult.status}`, 'warn');
     }
     
-    // Fetch both discovered AND registered to filter properly
+    // Always fetch discovered and registered, even if scan times out
     const [discovered, registered] = await Promise.all([
       getDiscoveredDevices(),
       getRegisteredDevices()
-    ]);
+    ]).catch(err => {
+      debug.log(`Failed to fetch device lists: ${err.message}`, 'error');
+      return [[], []];
+    });
     
     state.discoveredDevices = discovered;
     state.registeredDevices = registered;
+    
+    console.log('Discovered devices:', discovered);
+    console.log('Registered devices:', registered);
     
     renderDiscoveredList();
     debug.log(`Displaying ${state.discoveredDevices.length} LeakSeek device(s)`, 'success');
   } catch (error) {
     debug.log(`Discovery error: ${error.message}`, 'error');
+    console.error('Full error:', error);
     emptyState.innerHTML = '<p>Scan failed - try again</p>';
   }
 }
@@ -319,20 +326,35 @@ function renderDiscoveredList() {
   const container = document.getElementById('discovered-list');
   const emptyState = document.getElementById('discovering-state');
   
+  console.log('renderDiscoveredList called:', {
+    discovered: state.discoveredDevices.length,
+    registered: state.registeredDevices.length
+  });
+  
   if (state.discoveredDevices.length === 0) {
     container.style.display = 'none';
     emptyState.style.display = 'flex';
+    emptyState.innerHTML = '<p>No sensors found</p>';
     return;
   }
-  
-  container.style.display = 'block';
-  emptyState.style.display = 'none';
   
   // Filter out already registered devices
   const registeredAddresses = state.registeredDevices.map(d => d.address);
   const unregistered = state.discoveredDevices.filter(
     d => !registeredAddresses.includes(d.address)
   );
+  
+  console.log('Unregistered devices to show:', unregistered.length);
+  
+  if (unregistered.length === 0) {
+    container.style.display = 'none';
+    emptyState.style.display = 'flex';
+    emptyState.innerHTML = '<p>All discovered sensors are already registered</p>';
+    return;
+  }
+  
+  container.style.display = 'block';
+  emptyState.style.display = 'none';
   
   container.innerHTML = unregistered.map(device => `
     <div class="discovered-card" data-address="${device.address}">
