@@ -15,8 +15,10 @@ connected_devices = {}
 discovered_devices = []
 device_cache = {}  # Cache BLEDevice objects by address for connection
 
-# Thread-safe lock
+# Thread-safe locks
 data_lock = threading.Lock()
+scan_lock = threading.Lock()  # Prevent concurrent scans
+scan_in_progress = False
 
 # Event loop for async operations
 loop = None
@@ -217,25 +219,47 @@ def get_discovered_devices():
 @app.route("/scan", methods=['POST'])
 def trigger_scan():
     """Trigger an on-demand BLE scan"""
-    timeout = float(request.args.get('timeout', 5.0))
+    global scan_in_progress
     
-    if loop and loop.is_running():
+    # Check if scan already in progress
+    with scan_lock:
+        if scan_in_progress:
+            return jsonify({
+                "status": "busy",
+                "message": "Scan already in progress"
+            }), 409
+        scan_in_progress = True
+    
+    try:
+        timeout = float(request.args.get('timeout', 5.0))
+        
+        if not (loop and loop.is_running()):
+            return jsonify({"status": "error", "error": "BLE system not ready"}), 503
+        
         # Schedule scan in the async loop
         future = asyncio.run_coroutine_threadsafe(scan_once(timeout), loop)
-        try:
-            # Wait for scan to complete (with timeout)
-            devices = future.result(timeout=timeout + 2)
-            return jsonify({
-                "status": "complete",
-                "devices_found": len(devices)
-            })
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "error": str(e)
-            }), 500
-    else:
-        return jsonify({"status": "error", "error": "BLE system not ready"}), 503
+        
+        # Wait for scan to complete (with longer timeout for safety)
+        devices = future.result(timeout=timeout + 3)
+        
+        return jsonify({
+            "status": "complete",
+            "devices_found": len(devices) if devices else 0
+        })
+        
+    except TimeoutError:
+        return jsonify({
+            "status": "timeout",
+            "message": "Scan took too long"
+        }), 408
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+    finally:
+        with scan_lock:
+            scan_in_progress = False
 
 @app.route("/connected_devices", methods=['GET'])
 def get_connected_devices():
