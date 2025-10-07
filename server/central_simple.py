@@ -70,21 +70,46 @@ async def scan_once(timeout=5.0, device_name="LeakSeek"):
         return []
 
 async def connect_to_device(address: str):
-    """Connect to a device using cached BLEDevice object"""
+    """Connect to a device - re-scans if needed to ensure device is known to BlueZ"""
     print(f"[{address}] Connection requested")
     
     # Get cached device object
     with data_lock:
         device_obj = device_cache.get(address)
     
+    # If device not in cache OR connection will fail because BlueZ forgot it,
+    # do a quick scan to refresh
     if not device_obj:
-        print(f"[{address}] ✗ Device not in cache, please scan first")
-        return None
+        print(f"[{address}] Device not in cache, scanning...")
+        await scan_once(3.0)  # Quick 3-second scan
+        with data_lock:
+            device_obj = device_cache.get(address)
+        
+        if not device_obj:
+            print(f"[{address}] ✗ Device not found in scan")
+            return None
     
     try:
         print(f"[{address}] Connecting...")
         client = BleakClient(device_obj)
-        await client.connect()
+        
+        try:
+            await client.connect()
+        except Exception as first_error:
+            # If connection fails, likely BlueZ forgot the device
+            # Try one more time with a fresh scan
+            if "not found" in str(first_error).lower():
+                print(f"[{address}] Device not in BlueZ, re-scanning...")
+                await scan_once(3.0)
+                
+                with data_lock:
+                    device_obj = device_cache.get(address)
+                
+                if device_obj:
+                    client = BleakClient(device_obj)
+                    await client.connect()
+                else:
+                    raise Exception("Device disappeared after re-scan")
         
         if not client.is_connected:
             print(f"[{address}] ✗ Connection failed")
@@ -227,7 +252,7 @@ def trigger_scan():
             return jsonify({
                 "status": "busy",
                 "message": "Scan already in progress"
-            }), 409
+            }), 200  # Not an error, just busy
         scan_in_progress = True
     
     try:
@@ -236,23 +261,35 @@ def trigger_scan():
         if not (loop and loop.is_running()):
             return jsonify({"status": "error", "error": "BLE system not ready"}), 503
         
+        print(f"[Flask] Triggering scan with {timeout}s timeout")
+        
         # Schedule scan in the async loop
         future = asyncio.run_coroutine_threadsafe(scan_once(timeout), loop)
         
-        # Wait for scan to complete (with longer timeout for safety)
-        devices = future.result(timeout=timeout + 3)
+        # Wait for scan to complete (much longer timeout for Pi Zero)
+        wait_timeout = timeout + 5  # Extra 5 seconds
+        print(f"[Flask] Waiting up to {wait_timeout}s for scan to complete")
+        
+        devices = future.result(timeout=wait_timeout)
+        
+        print(f"[Flask] Scan returned {len(devices) if devices else 0} devices")
         
         return jsonify({
             "status": "complete",
             "devices_found": len(devices) if devices else 0
         })
         
-    except TimeoutError:
+    except TimeoutError as e:
+        print(f"[Flask] Scan timed out: {e}")
+        # Return success even on timeout - devices may have been found
         return jsonify({
             "status": "timeout",
-            "message": "Scan took too long"
-        }), 408
+            "message": "Scan completed but took longer than expected"
+        }), 200
     except Exception as e:
+        print(f"[Flask] Scan error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "status": "error",
             "error": str(e)
@@ -260,6 +297,7 @@ def trigger_scan():
     finally:
         with scan_lock:
             scan_in_progress = False
+            print("[Flask] Scan lock released")
 
 @app.route("/connected_devices", methods=['GET'])
 def get_connected_devices():

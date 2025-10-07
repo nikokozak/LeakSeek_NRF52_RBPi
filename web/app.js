@@ -291,8 +291,10 @@ async function refreshDiscovered() {
       debug.log('Scan already in progress, waiting...', 'info');
       // Wait a bit and try to fetch results
       await new Promise(resolve => setTimeout(resolve, 1000));
-    } else if (scanResult.status === 'complete') {
-      debug.log(`Scan complete: ${scanResult.devices_found} devices found`, 'info');
+    } else if (scanResult.status === 'complete' || scanResult.status === 'timeout') {
+      debug.log(`Scan complete: ${scanResult.devices_found || '?'} devices found`, 'info');
+    } else {
+      debug.log(`Scan status: ${scanResult.status}`, 'warn');
     }
     
     // Fetch both discovered AND registered to filter properly
