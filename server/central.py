@@ -294,5 +294,6 @@ if __name__ == '__main__':
     start_ble_background()
     
     # Run Flask app
+    # use_reloader=False prevents Flask from spawning twice (breaks background thread)
     # For production on Pi Zero, use: app.run(host='0.0.0.0', port=80, debug=False)
-    app.run(host='0.0.0.0', port=2300, debug=True)
+    app.run(host='0.0.0.0', port=2300, debug=True, use_reloader=False)
