@@ -78,3 +78,11 @@ async function renameDevice(address, newName) {
   });
 }
 
+// Trigger a BLE scan
+// Returns: { status: string, devices_found: number }
+async function triggerScan(timeout = 5.0) {
+  return apiFetch(`/scan?timeout=${timeout}`, {
+    method: 'POST'
+  });
+}
+

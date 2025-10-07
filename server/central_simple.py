@@ -33,30 +33,39 @@ async def indication_handler(sender, data):
     value = int.from_bytes(data, byteorder='little')
     await sensor_queue.put({"sender": sender, "value": value})
 
-async def scanner(timeout=5.0, device_name="LeakSeek"):
-    """Scan for BLE devices and cache discovered device objects"""
+async def scan_once(timeout=5.0, device_name="LeakSeek"):
+    """
+    Perform a single BLE scan and cache device objects.
+    Only called when explicitly requested, not continuously.
+    """
     global discovered_devices, device_cache
     
-    devices_found = await BleakScanner.discover(timeout=timeout)
+    print(f"Starting scan for '{device_name}' devices...")
     
-    newly_discovered = []
-    with data_lock:
-        # Clear old cache
-        device_cache.clear()
+    try:
+        devices_found = await BleakScanner.discover(timeout=timeout)
         
-        for device in devices_found:
-            # Cache ALL devices for potential connection
-            device_cache[device.address] = device
+        newly_discovered = []
+        with data_lock:
+            # Don't clear cache - accumulate devices
+            for device in devices_found:
+                # Cache ALL devices for potential connection
+                device_cache[device.address] = device
+                
+                # Track LeakSeek devices
+                if device.name and device_name in device.name:
+                    # Only add if not already in list
+                    if not any(d.address == device.address for d in discovered_devices):
+                        discovered_devices.append(device)
+                    newly_discovered.append(device)
+                    print(f"  Found: {device.name} ({device.address})")
             
-            # Track LeakSeek devices
-            if device.name and device_name in device.name:
-                newly_discovered.append(device)
-                print(f"Found: {device.name} ({device.address})")
+        print(f"Scan complete: {len(newly_discovered)} LeakSeek devices found")
+        return newly_discovered
         
-        # Update discovered list
-        discovered_devices = newly_discovered
-    
-    print(f"Scan complete: {len(devices_found)} total, {len(newly_discovered)} matching '{device_name}'")
+    except Exception as e:
+        print(f"Scan error: {e}")
+        return []
 
 async def connect_to_device(address: str):
     """Connect to a device using cached BLEDevice object"""
@@ -118,27 +127,40 @@ async def connect_to_device(address: str):
         print(f"[{address}] ✗ Error: {e}")
         return None
 
-async def main():
-    """Main BLE loop"""
-    global sensor_queue
-    sensor_queue = asyncio.Queue()
-    
-    print("BLE scanner starting...")
+async def auto_reconnect_loop():
+    """
+    Simple loop that checks if registered devices need reconnection.
+    Does NOT scan - only attempts to reconnect to devices we already know about.
+    """
+    print("Auto-reconnect loop starting...")
     
     while True:
         try:
-            await scanner(5.0)
+            await asyncio.sleep(10)  # Check every 10 seconds
             
-            # Auto-connect to registered devices
+            # Check registered devices
+            registered = utils.load_data()
+            
             with data_lock:
-                for device in discovered_devices:
-                    if utils.device_exists(device.address) and device.address not in connected_devices:
-                        asyncio.create_task(connect_to_device(device.address))
-            
-            await asyncio.sleep(2)  # Pause between scans
+                for address, device_info in registered.items():
+                    # If registered but not connected, and we have it in cache
+                    if address not in connected_devices and address in device_cache:
+                        print(f"Attempting to reconnect to {device_info['name']}...")
+                        asyncio.create_task(connect_to_device(address))
+                        
         except Exception as e:
-            print(f"Scanner error: {e}")
+            print(f"Auto-reconnect error: {e}")
             await asyncio.sleep(5)
+
+async def main():
+    """Main BLE event loop - just keeps things running"""
+    global sensor_queue
+    sensor_queue = asyncio.Queue()
+    
+    print("BLE system ready - scan on-demand via API")
+    
+    # Start auto-reconnect loop
+    await auto_reconnect_loop()
 
 # =============================================================================
 # Threading
@@ -191,6 +213,29 @@ def get_discovered_devices():
     with data_lock:
         devices_info = [{"name": d.name, "address": d.address} for d in discovered_devices]
     return jsonify(devices_info)
+
+@app.route("/scan", methods=['POST'])
+def trigger_scan():
+    """Trigger an on-demand BLE scan"""
+    timeout = float(request.args.get('timeout', 5.0))
+    
+    if loop and loop.is_running():
+        # Schedule scan in the async loop
+        future = asyncio.run_coroutine_threadsafe(scan_once(timeout), loop)
+        try:
+            # Wait for scan to complete (with timeout)
+            devices = future.result(timeout=timeout + 2)
+            return jsonify({
+                "status": "complete",
+                "devices_found": len(devices)
+            })
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "error": str(e)
+            }), 500
+    else:
+        return jsonify({"status": "error", "error": "BLE system not ready"}), 503
 
 @app.route("/connected_devices", methods=['GET'])
 def get_connected_devices():

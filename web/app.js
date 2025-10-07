@@ -274,7 +274,11 @@ async function handleForgetSensor() {
 // Refresh discovered devices
 async function refreshDiscovered() {
   try {
-    debug.log('Scanning for devices...', 'info');
+    debug.log('Triggering BLE scan...', 'info');
+    
+    // Trigger an actual BLE scan (takes 5 seconds)
+    const scanResult = await triggerScan(5.0);
+    debug.log(`Scan complete: ${scanResult.devices_found} devices found`, 'info');
     
     // Fetch both discovered AND registered to filter properly
     const [discovered, registered] = await Promise.all([
@@ -286,7 +290,7 @@ async function refreshDiscovered() {
     state.registeredDevices = registered;
     
     renderDiscoveredList();
-    debug.log(`Found ${state.discoveredDevices.length} device(s)`, 'success');
+    debug.log(`Displaying ${state.discoveredDevices.length} LeakSeek device(s)`, 'success');
   } catch (error) {
     debug.log(`Discovery error: ${error.message}`, 'error');
   }
