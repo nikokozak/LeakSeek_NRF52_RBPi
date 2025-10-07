@@ -20,6 +20,10 @@ sensor_queue = None  # Will be initialized in the async thread
 connected_devices = {}  # Dict keyed by address for easy lookup
 discovered_devices = []
 
+# Scanner control
+active_scanner = None  # Reference to current scanner
+scanner_lock = threading.Lock()
+
 # Thread-safe locks for shared data
 data_lock = threading.Lock()
 
@@ -49,7 +53,7 @@ Populates the global discovered_devices list with found devices
 If it comes across a registered device, it'll connect to it automatically
 '''
 async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
-    global discovered_devices
+    global discovered_devices, active_scanner
     stop_event = asyncio.Event()
     newly_discovered_devices = []
     all_devices_seen = []
@@ -81,30 +85,35 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
                 if not any(d.address == device.address for d in discovered_devices):
                     discovered_devices.append(device)
 
-                    # If the device is registered, print a message, and auto-connect
+                    # If the device is registered, schedule connection (don't block scanner)
                     if utils.device_exists(device.address):
-                        asyncio.create_task(connect_to_device(device.address))
                         print(f"*** Discovered registered device: {device.name}, {device.address}")
-                    
+                        # Connection will happen after scan completes
                     else:
                         print(f"*** Discovered new device: {device.name}, {device.address}")
 
     print(f"Starting BLE scan for devices containing '{device_name}'...")
-    scanner = BleakScanner(detection_callback)
+    scanner_obj = BleakScanner(detection_callback)
+    
+    with scanner_lock:
+        active_scanner = scanner_obj
     
     print("Scanner created, calling start()...")
-    await scanner.start()
+    await scanner_obj.start()
     print("Scanner started successfully, waiting for timeout...")
     
     await stop_event.wait()
     
     print("Timeout reached, stopping scanner...")
     try:
-        await scanner.stop()
+        await scanner_obj.stop()
         print("Scanner stopped")
     except Exception as e:
         print(f"Warning: Error stopping scanner: {e}")
         # Scanner stop failed, but we'll continue anyway
+    finally:
+        with scanner_lock:
+            active_scanner = None
 
 '''
 async def connect_to_device(address: str) -> Union[BleakClient, None]:
@@ -112,10 +121,30 @@ Connects to a device by address, returns the BleakClient instance if successful
 Also subscribes to indications from a specific characteristic
 '''
 async def connect_to_device(address: str) -> Union[BleakClient, None]:
+    global active_scanner
+    
     print(f"[{address}] Attempting to connect...")
     
+    # Stop scanning before connecting (BlueZ limitation)
+    scanner_to_stop = None
+    with scanner_lock:
+        if active_scanner:
+            print(f"[{address}] Pausing scanner for connection...")
+            scanner_to_stop = active_scanner
+            active_scanner = None
+    
+    if scanner_to_stop:
+        try:
+            await scanner_to_stop.stop()
+            print(f"[{address}] Scanner paused")
+        except Exception as e:
+            print(f"[{address}] Warning: Failed to stop scanner: {e}")
+        # Give BlueZ a moment to clean up
+        await asyncio.sleep(1)
+    
     try:
-        async with BleakClient(address, timeout=20.0) as client:
+        print(f"[{address}] Creating BleakClient...")
+        async with BleakClient(address, timeout=15.0) as client:
             if client.is_connected:
                 print(f"[{address}] ✓ Connected successfully")
                 with data_lock:
