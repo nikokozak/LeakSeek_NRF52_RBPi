@@ -35,7 +35,7 @@ class EinkDisplay:
         if self.enabled:
             try:
                 self.epd = epd2in13_V2.EPD()
-                self.epd.init()
+                self.epd.init(self.epd.FULL_UPDATE)
                 self.epd.Clear()
                 self.show_splash()
                 print("✓ E-ink display initialized")
