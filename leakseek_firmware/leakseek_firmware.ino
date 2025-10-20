@@ -1,3 +1,5 @@
+/*
+
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
 #define DEBUG t
 
@@ -136,3 +138,4 @@ void wait_for_serial(int time) {
     delay(10);
   }
 }
+*/
