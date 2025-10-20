@@ -49,9 +49,13 @@ class EinkDisplay:
             return
         
         try:
+            print(f"E-ink dimensions: {self.epd.width}x{self.epd.height}")
+            
             # Create blank image
             image = Image.new('1', (self.epd.height, self.epd.width), 255)
             draw = ImageDraw.Draw(image)
+            
+            print(f"Image created: {image.size}")
             
             # Try to use default font, or fallback
             try:
@@ -64,12 +68,21 @@ class EinkDisplay:
             # Draw splash
             draw.text((10, 40), "LeakSeek", font=font_large, fill=0)
             draw.text((10, 70), "Starting...", font=font_small, fill=0)
+            draw.rectangle([(0, 0), (self.epd.height - 1, self.epd.width - 1)], outline=0)
+            
+            print("Drawing complete, rotating and displaying...")
             
             # Rotate 90 degrees to match physical orientation
-            self.epd.display(self.epd.getbuffer(image.rotate(90)))
+            rotated = image.rotate(90, expand=True)
+            print(f"Rotated image size: {rotated.size}")
+            
+            self.epd.display(self.epd.getbuffer(rotated))
+            print("Display command sent!")
             
         except Exception as e:
             print(f"Error showing splash: {e}")
+            import traceback
+            traceback.print_exc()
     
     def update(self, sensor_data: Dict, registered_devices: Dict):
         """
