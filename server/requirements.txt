@@ -2,3 +2,6 @@ bleak>=0.21.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pillow>=10.0.0
+RPi.GPIO>=0.7.1
+spidev>=3.6
+gpiozero>=2.0

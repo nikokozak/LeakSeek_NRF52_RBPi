@@ -19,8 +19,8 @@ try:
         sys.path.append(epd_path)
     from waveshare_epd import epd2in13_V2
     EPD_AVAILABLE = True
-except ImportError:
-    print("⚠️  Waveshare EPD library not found. E-ink display disabled.")
+except (ImportError, RuntimeError) as e:
+    print(f"⚠️  E-ink display unavailable: {e}")
     EPD_AVAILABLE = False
 
 class EinkDisplay:
@@ -35,8 +35,8 @@ class EinkDisplay:
         if self.enabled:
             try:
                 self.epd = epd2in13_V2.EPD()
-                self.epd.init(self.epd.FULL_UPDATE)
-                self.epd.Clear(0xFF)
+                self.epd.init()
+                self.epd.Clear()
                 self.show_splash()
                 print("✓ E-ink display initialized")
             except Exception as e:
@@ -65,7 +65,8 @@ class EinkDisplay:
             draw.text((10, 40), "LeakSeek", font=font_large, fill=0)
             draw.text((10, 70), "Starting...", font=font_small, fill=0)
             
-            self.epd.display(self.epd.getbuffer(image))
+            # Rotate 90 degrees to match physical orientation
+            self.epd.display(self.epd.getbuffer(image.rotate(90)))
             
         except Exception as e:
             print(f"Error showing splash: {e}")
@@ -183,8 +184,8 @@ class EinkDisplay:
                 time_str = time.strftime("%H:%M:%S")
                 draw.text((5, self.epd.width - 15), time_str, font=font_small, fill=0)
                 
-                # Display
-                self.epd.display(self.epd.getbuffer(image))
+                # Display (rotate 90 degrees to match physical orientation)
+                self.epd.display(self.epd.getbuffer(image.rotate(90)))
                 
                 # Update tracking
                 self.last_state = state
