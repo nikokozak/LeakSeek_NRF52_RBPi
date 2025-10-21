@@ -21,6 +21,12 @@ try:
         f.write(f"[{time.time()}] EPD path: {epd_path}\n")
         f.write(f"[{time.time()}] Path exists: {os.path.exists(epd_path)}\n")
         f.write(f"[{time.time()}] __file__: {__file__}\n")
+        f.write(f"[{time.time()}] PWD: {os.getcwd()}\n")
+        try:
+            with open('/proc/device-tree/model') as m:
+                f.write(f"[{time.time()}] Device model: {m.read()}\n")
+        except:
+            f.write(f"[{time.time()}] Could not read device model\n")
     
     if os.path.exists(epd_path):
         sys.path.append(epd_path)
