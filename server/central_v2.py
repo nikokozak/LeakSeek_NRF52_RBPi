@@ -188,12 +188,19 @@ async def main():
 
 @app.on_event("startup")
 async def startup_event():
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    
     # Initialize e-ink display (with error handling for permission issues)
     try:
+        logger.info("Attempting to initialize e-ink display...")
         eink_display.init_display()
+        logger.info("E-ink display initialized successfully")
     except Exception as e:
-        print(f"⚠️  E-ink initialization failed: {e}")
-        print("   Run with sudo or add user to gpio group")
+        logger.error(f"⚠️  E-ink initialization failed: {e}")
+        logger.error("   Run with sudo or add user to gpio group")
+        import traceback
+        logger.error(traceback.format_exc())
     
     # Start background tasks
     asyncio.create_task(main())
