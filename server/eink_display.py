@@ -17,7 +17,7 @@ try:
     epd_path = os.path.join(os.path.dirname(__file__), '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib')
     if os.path.exists(epd_path):
         sys.path.append(epd_path)
-    from waveshare_epd import epd2in13_V2
+    from waveshare_epd import epd2in13_V4
     EPD_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
     print(f"⚠️  E-ink display unavailable: {e}")
@@ -34,8 +34,8 @@ class EinkDisplay:
         
         if self.enabled:
             try:
-                self.epd = epd2in13_V2.EPD()
-                self.epd.init(self.epd.FULL_UPDATE)
+                self.epd = epd2in13_V4.EPD()
+                self.epd.init()
                 self.epd.Clear()
                 self.show_splash()
                 print("✓ E-ink display initialized")
