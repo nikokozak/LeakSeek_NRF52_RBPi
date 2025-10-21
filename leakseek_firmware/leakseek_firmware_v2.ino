@@ -32,6 +32,11 @@ void setup() {
   DEBUG_PRINT("LeakSeek v2 - Advertisement-based monitoring");
   DEBUG_PRINT("---------------------------------------------\n");
 
+  // Configure leak sensor pin with internal pullup
+  // Pin reads HIGH normally, LOW when button pressed (connected to GND)
+  pinMode(LEAK_SENSOR_PIN, INPUT_PULLUP);
+  DEBUG_PRINT("Leak sensor pin configured on D9");
+
   // Start the BLE module
   Bluefruit.begin(1, 0);
   bond_clear_all(); // Clear all bonds for testing
@@ -56,9 +61,14 @@ void loop() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
-  // Simulate leak detection
-  // In production: uint8_t sensor_state = digitalRead(LEAK_SENSOR_PIN);
-  uint8_t sensor_state = random(0, 100) > 95 ? 1 : 0; // 5% chance of leak
+  // Simulate leak detection for demo
+  // For real sensor: uint8_t sensor_state = (digitalRead(LEAK_SENSOR_PIN) == LOW) ? 1 : 0;
+  uint8_t sensor_state = random(0, 100) < LEAK_CHANCE_PERCENT ? 1 : 0;
+  
+  // Debug output
+  if (sensor_state == 1) {
+    DEBUG_PRINT("Simulated leak triggered!");
+  }
 
   // Check if we should transition modes
   if (sensor_state == 1 && !(current_flags & 0x01)) {
@@ -76,7 +86,7 @@ void loop() {
       (millis() - alert_start_time > FAST_ADV_DURATION)) {
     // Switch to slower but still connectable advertising
     Bluefruit.Advertising.stop();
-    Bluefruit.Advertising.setInterval(160, 244); // 100-152ms intervals
+    Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_SLOW, ADV_INTERVAL_ALERT_SLOW + 84);
     Bluefruit.Advertising.start(0);
     DEBUG_PRINT("Switched to slower alert advertising");
   }
@@ -136,7 +146,7 @@ void loop() {
     last_indicated_state = -1; // Reset when disconnected
   }
 
-  delay(1000);
+  delay(LOOP_DELAY_MS);
 }
 
 void setup_device_and_device_information() {
@@ -204,12 +214,12 @@ void set_advertising_mode(uint8_t mode) {
     // Normal mode: non-connectable, slow advertising
     DEBUG_PRINT("Setting NORMAL mode (non-connectable)");
     Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED);
-    Bluefruit.Advertising.setInterval(1600, 1600); // 1000ms intervals
+    Bluefruit.Advertising.setInterval(ADV_INTERVAL_NORMAL, ADV_INTERVAL_NORMAL);
   } else {
     // Alert mode: connectable, fast advertising initially
     DEBUG_PRINT("Setting ALERT mode (connectable, fast)");
     Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
-    Bluefruit.Advertising.setInterval(32, 48); // 20-30ms intervals (fast)
+    Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_FAST, ADV_INTERVAL_ALERT_FAST + 16);
     Bluefruit.Advertising.setFastTimeout(30);
   }
   

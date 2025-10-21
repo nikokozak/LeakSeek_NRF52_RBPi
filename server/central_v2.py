@@ -179,12 +179,19 @@ async def eink_update_loop():
 
 async def main():
     """Main loop: continuous scanning with error recovery"""
+    # Wait for Bluetooth to be ready (especially important at boot)
+    startup_retry_delay = 5
+    
     while True:
         try:
             await scanner(5)
+            startup_retry_delay = 2  # After first success, use shorter retry
         except Exception as e:
-            print(f"❌ Scanner error: {e}")
-            await asyncio.sleep(2)  # Brief pause before retry
+            if "No powered Bluetooth adapters" in str(e):
+                print(f"⚠️  Bluetooth not ready, retrying in {startup_retry_delay}s...")
+            else:
+                print(f"❌ Scanner error: {e}")
+            await asyncio.sleep(startup_retry_delay)
 
 @app.on_event("startup")
 async def startup_event():

@@ -7,6 +7,10 @@
 // Pin for Pair/Reset button
 #define BUTTON_PIN 2
 
+// Pin for leak sensor (connected between GND and D9)
+// Button is normally open, reads HIGH. When pressed, reads LOW.
+#define LEAK_SENSOR_PIN 9
+
 // #define UUID16_SVC_ALERT_NOTIFICATION                         0x1811, in BLEUuid.h
 #define SERVICE_UUID UUID16_SVC_ALERT_NOTIFICATION
 
@@ -23,6 +27,18 @@
 // Advertising modes
 #define ADV_MODE_NORMAL 0
 #define ADV_MODE_ALERT 1
+
+// Advertising intervals (in units of 0.625ms)
+// Normal mode: 1600 = 1000ms, Alert mode: 32 = 20ms
+#define ADV_INTERVAL_NORMAL 1600  // 1000ms between advertisements
+#define ADV_INTERVAL_ALERT_FAST 32  // 20ms (fast burst for first 5 seconds)
+#define ADV_INTERVAL_ALERT_SLOW 160  // 100ms (after initial burst)
+
+// Loop delay (how often we check the sensor)
+#define LOOP_DELAY_MS 1000  // Check sensor every 1 second
+
+// Simulation mode settings (for demo without real sensor)
+#define LEAK_CHANCE_PERCENT 15  // Percentage chance of leak per check (15 = 15%)
 
 // Debug Macro
 
