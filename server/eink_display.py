@@ -70,13 +70,10 @@ class EinkDisplay:
             draw.text((10, 70), "Starting...", font=font_small, fill=0)
             draw.rectangle([(0, 0), (self.epd.height - 1, self.epd.width - 1)], outline=0)
             
-            print("Drawing complete, rotating and displaying...")
+            print("Drawing complete, displaying...")
             
-            # Rotate 90 degrees to match physical orientation
-            rotated = image.rotate(90, expand=True)
-            print(f"Rotated image size: {rotated.size}")
-            
-            self.epd.display(self.epd.getbuffer(rotated))
+            # V4 doesn't need rotation - display as-is
+            self.epd.display(self.epd.getbuffer(image))
             print("Display command sent!")
             
         except Exception as e:
@@ -197,8 +194,8 @@ class EinkDisplay:
                 time_str = time.strftime("%H:%M:%S")
                 draw.text((5, self.epd.width - 15), time_str, font=font_small, fill=0)
                 
-                # Display (rotate 90 degrees to match physical orientation)
-                self.epd.display(self.epd.getbuffer(image.rotate(90)))
+                # Display (V4 doesn't need rotation)
+                self.epd.display(self.epd.getbuffer(image))
                 
                 # Update tracking
                 self.last_state = state
