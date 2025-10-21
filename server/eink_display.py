@@ -247,6 +247,12 @@ _display = None
 def init_display():
     """Initialize the global display instance"""
     global _display
+    
+    # Debug: Check state
+    with open("/tmp/eink_debug.log", "a") as f:
+        f.write(f"[{time.time()}] init_display called, _display is None: {_display is None}\n")
+        f.write(f"[{time.time()}] EPD_AVAILABLE: {EPD_AVAILABLE}\n")
+    
     if _display is None:
         _display = EinkDisplay()
     return _display
