@@ -56,18 +56,22 @@ void loop() {
   static uint8_t last_flags = 0xFF;
   static uint8_t last_battery = 0xFF;
   static int8_t last_indicated_state = -1;
+  static unsigned long last_incident_time = 0;
   
   // Toggle LED for visual feedback
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
-  // Simulate leak detection for demo
+  // Simulate leak detection for demo with cooldown to prevent duplicates
   // For real sensor: uint8_t sensor_state = (digitalRead(LEAK_SENSOR_PIN) == LOW) ? 1 : 0;
-  uint8_t sensor_state = random(0, 100) < LEAK_CHANCE_PERCENT ? 1 : 0;
+  uint8_t sensor_state = 0;
   
-  // Debug output
-  if (sensor_state == 1) {
-    DEBUG_PRINT("Simulated leak triggered!");
+  // Only allow new incidents if cooldown period has passed
+  if (millis() - last_incident_time > INCIDENT_COOLDOWN_MS) {
+    if (random(0, 100) < LEAK_CHANCE_PERCENT) {
+      sensor_state = 1;
+      DEBUG_PRINT("Simulated leak triggered!");
+    }
   }
 
   // Check if we should transition modes
@@ -78,6 +82,7 @@ void loop() {
     current_flags = 0x03; // leak=1, needs_ack=1
     set_advertising_mode(ADV_MODE_ALERT);
     alert_start_time = millis();
+    last_incident_time = millis(); // Record incident time for cooldown
   }
   
   // If in alert mode and fast advertising period expired, slow down

@@ -16,29 +16,11 @@ try:
     # Adjust path if you cloned the repo to a different location
     epd_path = os.path.join(os.path.dirname(__file__), '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib')
     
-    # Debug
-    with open("/tmp/eink_debug.log", "a") as f:
-        f.write(f"[{time.time()}] EPD path: {epd_path}\n")
-        f.write(f"[{time.time()}] Path exists: {os.path.exists(epd_path)}\n")
-        f.write(f"[{time.time()}] __file__: {__file__}\n")
-        f.write(f"[{time.time()}] PWD: {os.getcwd()}\n")
-        try:
-            with open('/proc/device-tree/model') as m:
-                f.write(f"[{time.time()}] Device model: {m.read()}\n")
-        except:
-            f.write(f"[{time.time()}] Could not read device model\n")
-    
     if os.path.exists(epd_path):
         sys.path.append(epd_path)
     from waveshare_epd import epd2in13_V4
     EPD_AVAILABLE = True
-    with open("/tmp/eink_debug.log", "a") as f:
-        f.write(f"[{time.time()}] Waveshare import SUCCESS\n")
 except (ImportError, RuntimeError) as e:
-    with open("/tmp/eink_debug.log", "a") as f:
-        f.write(f"[{time.time()}] Waveshare import FAILED: {e}\n")
-        import traceback
-        f.write(f"[{time.time()}] Traceback: {traceback.format_exc()}\n")
     print(f"⚠️  E-ink display unavailable: {e}")
     EPD_AVAILABLE = False
 
@@ -49,20 +31,14 @@ class EinkDisplay:
         self.last_state = None
         self.update_lock = threading.Lock()
         self.last_update_time = 0
-        self.debounce_interval = 5.0  # Minimum 5 seconds between updates (RPi Zero optimization)
+        self.debounce_interval = 8.0  # 8 seconds between updates (demo-optimized)
         
         if self.enabled:
             try:
-                # Debug: Write to file to bypass logging issues
-                with open("/tmp/eink_debug.log", "a") as f:
-                    f.write(f"[{time.time()}] __init__ started, enabled={self.enabled}\n")
-                
                 import logging
                 logger = logging.getLogger("uvicorn.error")
                 
                 self.epd = epd2in13_V4.EPD()
-                with open("/tmp/eink_debug.log", "a") as f:
-                    f.write(f"[{time.time()}] EPD object created\n")
                 logger.info("EPD object created")
                 
                 self.epd.init()
@@ -70,6 +46,17 @@ class EinkDisplay:
                 
                 self.epd.Clear()
                 logger.info("EPD cleared")
+                
+                # Preload fonts once to avoid repeated file I/O
+                try:
+                    self.font_title = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 20)
+                    self.font_large = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 16)
+                    self.font_normal = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 14)
+                    self.font_small = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 11)
+                except:
+                    f = ImageFont.load_default()
+                    self.font_title = self.font_large = self.font_normal = self.font_small = f
+                logger.info("Fonts preloaded")
                 
                 self.show_splash()
                 logger.info("Splash screen shown")
@@ -101,17 +88,10 @@ class EinkDisplay:
             
             logger.info(f"Image created: {image.size}")
             
-            # Try to use default font, or fallback
-            try:
-                font_large = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 24)
-                font_small = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 14)
-            except:
-                font_large = ImageFont.load_default()
-                font_small = ImageFont.load_default()
-            
+            # Use preloaded fonts
             # Draw splash
-            draw.text((10, 40), "LeakSeek", font=font_large, fill=0)
-            draw.text((10, 70), "Starting...", font=font_small, fill=0)
+            draw.text((10, 40), "LeakSeek", font=self.font_title, fill=0)
+            draw.text((10, 70), "Starting...", font=self.font_normal, fill=0)
             draw.rectangle([(0, 0), (self.epd.height - 1, self.epd.width - 1)], outline=0)
             
             logger.info("Drawing complete, displaying...")
@@ -183,60 +163,51 @@ class EinkDisplay:
                 image = Image.new('1', (self.epd.height, self.epd.width), 255)
                 draw = ImageDraw.Draw(image)
                 
-                # Load fonts
-                try:
-                    font_title = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 20)
-                    font_large = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 16)
-                    font_normal = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 14)
-                    font_small = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 11)
-                except:
-                    font_title = font_large = font_normal = font_small = ImageFont.load_default()
-                
                 y_pos = 5
                 
                 # Header
-                draw.text((5, y_pos), "LeakSeek", font=font_title, fill=0)
+                draw.text((5, y_pos), "LeakSeek", font=self.font_title, fill=0)
                 y_pos += 25
                 
                 # Alert status
                 if state["alert_count"] > 0:
                     # ALERT MODE
                     draw.rectangle([(0, y_pos), (self.epd.height, y_pos + 30)], fill=0)
-                    draw.text((10, y_pos + 5), f"⚠ {state['alert_count']} LEAK ALERT", font=font_large, fill=255)
+                    draw.text((10, y_pos + 5), f"⚠ {state['alert_count']} LEAK ALERT", font=self.font_large, fill=255)
                     y_pos += 35
                     
                     # List alert sensors
                     for i, sensor_name in enumerate(state["alerts"][:3]):  # Max 3
-                        draw.text((10, y_pos), f"• {sensor_name}", font=font_normal, fill=0)
+                        draw.text((10, y_pos), f"• {sensor_name}", font=self.font_normal, fill=0)
                         y_pos += 18
                     
                     if len(state["alerts"]) > 3:
-                        draw.text((10, y_pos), f"+ {len(state['alerts']) - 3} more", font=font_small, fill=0)
+                        draw.text((10, y_pos), f"+ {len(state['alerts']) - 3} more", font=self.font_small, fill=0)
                         y_pos += 16
                     
                 else:
                     # ALL CLEAR MODE
-                    draw.text((5, y_pos), "✓ All Clear", font=font_large, fill=0)
+                    draw.text((5, y_pos), "✓ All Clear", font=self.font_large, fill=0)
                     y_pos += 25
                     
                     # Show registered sensors
                     if state["total_count"] > 0:
-                        draw.text((5, y_pos), f"{state['total_count']} sensor(s) active", font=font_small, fill=0)
+                        draw.text((5, y_pos), f"{state['total_count']} sensor(s) active", font=self.font_small, fill=0)
                         y_pos += 18
                         
                         # List sensors (max 3)
                         for sensor_name in state["ok_sensors"][:3]:
-                            draw.text((10, y_pos), f"• {sensor_name}", font=font_small, fill=0)
+                            draw.text((10, y_pos), f"• {sensor_name}", font=self.font_small, fill=0)
                             y_pos += 15
                         
                         if len(state["ok_sensors"]) > 3:
-                            draw.text((10, y_pos), f"+ {len(state['ok_sensors']) - 3} more", font=font_small, fill=0)
+                            draw.text((10, y_pos), f"+ {len(state['ok_sensors']) - 3} more", font=self.font_small, fill=0)
                     else:
-                        draw.text((5, y_pos), "No sensors registered", font=font_small, fill=0)
+                        draw.text((5, y_pos), "No sensors registered", font=self.font_small, fill=0)
                 
                 # Timestamp at bottom
                 time_str = time.strftime("%H:%M:%S")
-                draw.text((5, self.epd.width - 15), time_str, font=font_small, fill=0)
+                draw.text((5, self.epd.width - 15), time_str, font=self.font_small, fill=0)
                 
                 # Display (V4 doesn't need rotation)
                 self.epd.display(self.epd.getbuffer(image))
@@ -266,12 +237,6 @@ _display = None
 def init_display():
     """Initialize the global display instance"""
     global _display
-    
-    # Debug: Check state
-    with open("/tmp/eink_debug.log", "a") as f:
-        f.write(f"[{time.time()}] init_display called, _display is None: {_display is None}\n")
-        f.write(f"[{time.time()}] EPD_AVAILABLE: {EPD_AVAILABLE}\n")
-    
     if _display is None:
         _display = EinkDisplay()
     return _display

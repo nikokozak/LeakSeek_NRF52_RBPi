@@ -18,6 +18,9 @@ ACK_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 # Manufacturer ID (Konica Minolta, matches firmware)
 MANUFACTURER_ID = 0x018B
 
+# Stale threshold: 2x advertising interval + scan interval = ~20 seconds
+STALE_THRESHOLD_SECONDS = 20
+
 # Shared sensor data store
 # Format: {address: {value, seq, battery, timestamp, needs_ack, last_ack_time}}
 sensor_data = defaultdict(dict)
@@ -28,6 +31,16 @@ ack_in_progress = set()  # Track which devices are being ACKed
 
 # Device store
 discovered_devices = []
+
+# Cached registered devices (avoid repeated JSON reads)
+registered_cache = {}
+
+def load_registered_cached(force=False):
+    """Load registered devices from cache or disk"""
+    global registered_cache
+    if force or not registered_cache:
+        registered_cache = utils.load_data()
+    return registered_cache
 
 app = FastAPI()
 
@@ -67,7 +80,7 @@ def parse_manufacturer_data(manufacturer_data: dict) -> dict:
         "needs_ack": bool(data[1] & 0x02)
     }
 
-async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
+async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
     """
     Scan for devices with LeakSeek in the name.
     Parse manufacturer data from advertisements.
@@ -96,7 +109,8 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
             if not any(d.address == device.address for d in discovered_devices):
                 discovered_devices.append(device)
                 
-                if utils.device_exists(device.address):
+                is_registered = device.address in load_registered_cached()
+                if is_registered:
                     print(f"Discovered registered device: {device.name}, {device.address}")
                 else:
                     print(f"Discovered new device: {device.name}, {device.address}")
@@ -116,7 +130,7 @@ async def scanner(timeout=5.0, device_name="LeakSeek") -> None:
                 
                 # If ACK needed and not already in queue/progress, enqueue
                 if parsed["needs_ack"] and device.address not in ack_in_progress:
-                    if utils.device_exists(device.address):
+                    if device.address in load_registered_cached():
                         print(f"⚠️  ALERT from {device.address}, seq={parsed['seq']}, queuing ACK")
                         ack_in_progress.add(device.address)
                         asyncio.create_task(ack_device(device.address, parsed["seq"]))
@@ -170,9 +184,9 @@ async def ack_device(address: str, seq: int, max_retries: int = 2):
 async def eink_update_loop():
     """Periodically update e-ink display"""
     while True:
-        await asyncio.sleep(5)  # Check every 5 seconds (reduced for RPi Zero)
+        await asyncio.sleep(10)  # Check every 10 seconds (demo-optimized)
         try:
-            registered = utils.load_data()
+            registered = load_registered_cached()
             eink_display.update_display(dict(sensor_data), registered)
         except Exception as e:
             print(f"E-ink update error: {e}")
@@ -183,8 +197,13 @@ async def main():
     startup_retry_delay = 5
     
     while True:
+        # Pause scanning if ACK in progress to reduce BLE/WiFi interference
+        if ack_in_progress:
+            await asyncio.sleep(1)
+            continue
+            
         try:
-            await scanner(5)
+            await scanner(8)  # Longer scan, less frequent restarts
             startup_retry_delay = 2  # After first success, use shorter retry
         except Exception as e:
             if "No powered Bluetooth adapters" in str(e):
@@ -197,6 +216,10 @@ async def main():
 async def startup_event():
     import logging
     logger = logging.getLogger("uvicorn.error")
+    
+    # Load registered devices cache
+    load_registered_cached(force=True)
+    logger.info(f"Loaded {len(registered_cache)} registered devices")
     
     # Initialize e-ink display (with error handling for permission issues)
     try:
@@ -259,8 +282,20 @@ async def captive_portal_ios():
 
 @app.get("/sensor_data")
 async def get_sensor_data():
-    """Get all sensor data"""
-    return dict(sensor_data)
+    """Get all sensor data with stale detection"""
+    current_time = time.time()
+    enriched_data = {}
+    
+    for address, data in sensor_data.items():
+        last_seen = data.get("timestamp", 0)
+        is_stale = (current_time - last_seen) > STALE_THRESHOLD_SECONDS
+        
+        enriched_data[address] = {
+            **data,
+            "stale": is_stale
+        }
+    
+    return enriched_data
 
 @app.get("/sensor_data/{address}")
 async def get_sensor_data_by_address(address: str):
@@ -283,8 +318,9 @@ async def get_connected_devices():
     In v2, we don't maintain persistent connections, so return devices with recent ACK activity.
     """
     recent_threshold = time.time() - 10  # Within last 10 seconds
+    registered = load_registered_cached()
     active_devices = [
-        {"name": utils.load_data().get(addr, {}).get("name", addr), "address": addr}
+        {"name": registered.get(addr, {}).get("name", addr), "address": addr}
         for addr, data in sensor_data.items()
         if data.get("last_ack_time", 0) > recent_threshold
     ]
@@ -293,25 +329,26 @@ async def get_connected_devices():
 @app.get("/registered_devices")
 async def get_registered_devices():
     """Get list of registered devices"""
-    devices = utils.load_data()
+    devices = load_registered_cached()
     return [{"name": device["name"], "address": device["address"]} for device in devices.values()]
 
 @app.post("/register/{address}")
 async def register(address: str, name: str):
     """Register a device"""
-    device_exists = utils.device_exists(address)
-    if device_exists:
+    if address in registered_cache:
         return {"status": "already registered", "address": address, "name": name}
     
-    # Add to storage
+    # Add to storage and cache
     utils.add_device(address, name)
+    registered_cache[address] = {"name": name, "address": address}
     return {"status": "registered", "address": address, "name": name}
 
 @app.post("/unregister/{address}")
 async def unregister(address: str):
     """Unregister a device"""
-    if utils.device_exists(address):
+    if address in registered_cache:
         utils.remove_device(address)
+        registered_cache.pop(address, None)
         
         # Remove from sensor data
         if address in sensor_data:
@@ -325,14 +362,16 @@ async def unregister(address: str):
 async def unregister_all():
     """Unregister all devices"""
     utils.clear_data()
+    registered_cache.clear()
     sensor_data.clear()
     return {"status": "all devices unregistered"}
 
 @app.post("/rename/{address}")
 async def rename_device(address: str, new_name: str):
     """Rename a device"""
-    if utils.device_exists(address):
+    if address in registered_cache:
         utils.rename_device(address, new_name)
+        registered_cache[address]["name"] = new_name
         return {"status": "renamed", "address": address, "new_name": new_name}
     else:
         return {"status": "not found", "address": address}

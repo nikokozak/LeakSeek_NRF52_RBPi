@@ -122,6 +122,19 @@ header h1 {
     color: #ff5252;
 }
 
+.sensor-card.stale {
+    opacity: 0.5;
+    border-color: #555;
+}
+
+.sensor-card.stale .sensor-name {
+    color: #888;
+}
+
+.sensor-card.stale .sensor-status {
+    color: #666;
+}
+
 .sensor-meta {
     display: flex;
     justify-content: space-between;

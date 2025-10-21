@@ -2,7 +2,7 @@
 // Manages state, UI updates, and polling
 
 // Configuration
-const POLL_INTERVAL = 2000; // 2 seconds
+const POLL_INTERVAL = 4000; // 4 seconds (demo-optimized)
 const LEAK_THRESHOLD = 1; // Value indicating a leak
 
 // State
@@ -158,7 +158,8 @@ function renderSensorList() {
       ...device,
       value: data.value !== undefined ? data.value : null,
       timestamp: data.timestamp || null,
-      hasLeak: data.value >= LEAK_THRESHOLD
+      hasLeak: data.value >= LEAK_THRESHOLD,
+      stale: data.stale || false
     };
   });
   
@@ -171,10 +172,10 @@ function renderSensorList() {
   
   // Render
   container.innerHTML = sensors.map(sensor => `
-    <div class="sensor-card ${sensor.hasLeak ? 'alert' : ''}" data-address="${sensor.address}">
+    <div class="sensor-card ${sensor.hasLeak ? 'alert' : ''} ${sensor.stale ? 'stale' : ''}" data-address="${sensor.address}">
       <div class="sensor-header">
-        <div class="sensor-name">${sensor.name}</div>
-        <div class="sensor-status">${sensor.value !== null ? sensor.value : '—'}</div>
+        <div class="sensor-name">${sensor.name}${sensor.stale ? ' (offline)' : ''}</div>
+        <div class="sensor-status">${sensor.stale ? '—' : (sensor.value !== null ? sensor.value : '—')}</div>
       </div>
       <div class="sensor-meta">
         <span class="sensor-address">${sensor.address}</span>

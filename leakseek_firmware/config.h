@@ -38,7 +38,8 @@
 #define LOOP_DELAY_MS 1000  // Check sensor every 1 second
 
 // Simulation mode settings (for demo without real sensor)
-#define LEAK_CHANCE_PERCENT 15  // Percentage chance of leak per check (15 = 15%)
+#define LEAK_CHANCE_PERCENT 5  // Percentage chance of leak per check (5 = 5%)
+#define INCIDENT_COOLDOWN_MS 15000  // Minimum 15 seconds between incidents
 
 // Debug Macro
 
