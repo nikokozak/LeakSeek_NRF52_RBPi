@@ -1,5 +1,6 @@
 // API Configuration
-const API_BASE = 'http://localhost:8000';
+// Use relative URLs so it works from any host (localhost, 10.0.0.1, etc.)
+const API_BASE = '';
 
 // Simple fetch wrapper with error handling
 async function apiFetch(endpoint, options = {}) {
