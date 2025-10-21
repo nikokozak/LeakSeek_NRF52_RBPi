@@ -213,19 +213,22 @@ async def root():
         return FileResponse(index_file)
     return {"status": "LeakSeek Server Running"}
 
-@app.get("/{file_path:path}")
-async def serve_static(file_path: str):
-    """Serve static files (CSS, JS, etc.)"""
-    # Skip API routes
-    if file_path.startswith(("sensor_data", "discovered_devices", "connected_devices", 
-                             "registered_devices", "register", "unregister", "rename", 
-                             "ack", "generate_204", "hotspot-detect")):
-        return {"error": "Not found"}
-    
-    file = os.path.join(STATIC_DIR, file_path)
-    if os.path.exists(file) and os.path.isfile(file):
-        return FileResponse(file)
-    return {"error": "File not found"}
+# Static file routes for CSS/JS
+@app.get("/style.css")
+async def get_style():
+    return FileResponse(os.path.join(STATIC_DIR, "style.css"))
+
+@app.get("/app.js")
+async def get_app_js():
+    return FileResponse(os.path.join(STATIC_DIR, "app.js"))
+
+@app.get("/api.js")
+async def get_api_js():
+    return FileResponse(os.path.join(STATIC_DIR, "api.js"))
+
+@app.get("/keyboard.js")
+async def get_keyboard_js():
+    return FileResponse(os.path.join(STATIC_DIR, "keyboard.js"))
 
 @app.get("/generate_204")
 async def captive_portal_android():
