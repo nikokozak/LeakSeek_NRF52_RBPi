@@ -137,6 +137,36 @@ await asyncio.sleep(5)
 
 ---
 
+## 🔧 SYSTEMD E-INK ISSUE
+
+### E-ink Not Working When Started by Systemd
+**Issue:** E-ink display works perfectly when running manually (`uvicorn central_v2:app`) but fails silently when started via systemd service.
+
+**Root Cause:** 
+- Waveshare `epdconfig.py` detects platform at import time by checking `/sys/bus/platform/drivers/gpiomem-bcm2835`
+- When systemd starts services early in boot, this driver isn't loaded yet
+- Detection falls through to `JetsonNano()` as default
+- Tries to `import Jetson.GPIO` which doesn't exist → silent failure
+
+**Fix:** Manually edit `e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py` around line 310-317.
+
+Replace:
+```python
+if os.path.exists('/sys/bus/platform/drivers/gpiomem-bcm2835'):
+    implementation = RaspberryPi()
+# ... (rest of detection logic)
+```
+
+With:
+```python
+# Force RaspberryPi (systemd timing workaround)
+implementation = RaspberryPi()
+```
+
+**Impact:** E-ink now works reliably when started by systemd at boot.
+
+---
+
 ## 📋 ADDITIONAL IMPROVEMENTS
 
 ### Missing Header

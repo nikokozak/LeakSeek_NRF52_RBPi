@@ -99,7 +99,33 @@ cd ~/LeakSeek_NRF52_RBPi
 git clone https://github.com/waveshare/e-Paper.git
 ```
 
-The e-ink module will auto-detect if the library is available.
+**Important:** You must manually patch the Waveshare library to fix a systemd timing issue:
+
+```bash
+# Backup original
+cp ~/LeakSeek_NRF52_RBPi/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py ~/LeakSeek_NRF52_RBPi/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py.backup
+
+# Edit the file
+nano ~/LeakSeek_NRF52_RBPi/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py
+```
+
+Find the section around line 310-317 that looks like:
+```python
+if os.path.exists('/sys/bus/platform/drivers/gpiomem-bcm2835'):
+    implementation = RaspberryPi()
+elif os.path.exists('/sys/bus/platform/drivers/gpio-x3'):
+    implementation = SunriseX3()
+else:
+    implementation = JetsonNano()
+```
+
+Replace the entire block with:
+```python
+# Force RaspberryPi (systemd timing workaround)
+implementation = RaspberryPi()
+```
+
+**Why this is needed:** When systemd starts services early in boot, the GPIO driver isn't loaded yet. The detection falls through to JetsonNano as default, which fails to import. This manual override forces correct RaspberryPi detection.
 
 ### 3. Install Python Dependencies
 
