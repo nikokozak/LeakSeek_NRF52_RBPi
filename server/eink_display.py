@@ -34,10 +34,16 @@ class EinkDisplay:
         
         if self.enabled:
             try:
+                # Debug: Write to file to bypass logging issues
+                with open("/tmp/eink_debug.log", "a") as f:
+                    f.write(f"[{time.time()}] __init__ started, enabled={self.enabled}\n")
+                
                 import logging
                 logger = logging.getLogger("uvicorn.error")
                 
                 self.epd = epd2in13_V4.EPD()
+                with open("/tmp/eink_debug.log", "a") as f:
+                    f.write(f"[{time.time()}] EPD object created\n")
                 logger.info("EPD object created")
                 
                 self.epd.init()
