@@ -15,11 +15,24 @@ try:
     # Waveshare library is typically in a subdirectory
     # Adjust path if you cloned the repo to a different location
     epd_path = os.path.join(os.path.dirname(__file__), '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib')
+    
+    # Debug
+    with open("/tmp/eink_debug.log", "a") as f:
+        f.write(f"[{time.time()}] EPD path: {epd_path}\n")
+        f.write(f"[{time.time()}] Path exists: {os.path.exists(epd_path)}\n")
+        f.write(f"[{time.time()}] __file__: {__file__}\n")
+    
     if os.path.exists(epd_path):
         sys.path.append(epd_path)
     from waveshare_epd import epd2in13_V4
     EPD_AVAILABLE = True
+    with open("/tmp/eink_debug.log", "a") as f:
+        f.write(f"[{time.time()}] Waveshare import SUCCESS\n")
 except (ImportError, RuntimeError) as e:
+    with open("/tmp/eink_debug.log", "a") as f:
+        f.write(f"[{time.time()}] Waveshare import FAILED: {e}\n")
+        import traceback
+        f.write(f"[{time.time()}] Traceback: {traceback.format_exc()}\n")
     print(f"⚠️  E-ink display unavailable: {e}")
     EPD_AVAILABLE = False
 
