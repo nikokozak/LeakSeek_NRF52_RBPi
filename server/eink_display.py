@@ -45,17 +45,21 @@ class EinkDisplay:
     
     def show_splash(self):
         """Show startup splash screen"""
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        
         if not self.enabled:
+            logger.warning("E-ink not enabled, skipping splash")
             return
         
         try:
-            print(f"E-ink dimensions: {self.epd.width}x{self.epd.height}")
+            logger.info(f"E-ink dimensions: {self.epd.width}x{self.epd.height}")
             
             # Create blank image
             image = Image.new('1', (self.epd.height, self.epd.width), 255)
             draw = ImageDraw.Draw(image)
             
-            print(f"Image created: {image.size}")
+            logger.info(f"Image created: {image.size}")
             
             # Try to use default font, or fallback
             try:
@@ -70,16 +74,16 @@ class EinkDisplay:
             draw.text((10, 70), "Starting...", font=font_small, fill=0)
             draw.rectangle([(0, 0), (self.epd.height - 1, self.epd.width - 1)], outline=0)
             
-            print("Drawing complete, displaying...")
+            logger.info("Drawing complete, displaying...")
             
             # V4 doesn't need rotation - display as-is
             self.epd.display(self.epd.getbuffer(image))
-            print("Display command sent!")
+            logger.info("Display command sent to e-ink!")
             
         except Exception as e:
-            print(f"Error showing splash: {e}")
+            logger.error(f"Error showing splash: {e}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
     
     def update(self, sensor_data: Dict, registered_devices: Dict):
         """
