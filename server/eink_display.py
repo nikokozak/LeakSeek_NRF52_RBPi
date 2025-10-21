@@ -34,13 +34,28 @@ class EinkDisplay:
         
         if self.enabled:
             try:
+                import logging
+                logger = logging.getLogger("uvicorn.error")
+                
                 self.epd = epd2in13_V4.EPD()
+                logger.info("EPD object created")
+                
                 self.epd.init()
+                logger.info("EPD initialized")
+                
                 self.epd.Clear()
+                logger.info("EPD cleared")
+                
                 self.show_splash()
+                logger.info("Splash screen shown")
+                
                 print("✓ E-ink display initialized")
             except Exception as e:
-                print(f"❌ Failed to initialize e-ink display: {e}")
+                import logging
+                logger = logging.getLogger("uvicorn.error")
+                logger.error(f"❌ Failed to initialize e-ink display: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 self.enabled = False
     
     def show_splash(self):
