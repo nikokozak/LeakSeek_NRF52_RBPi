@@ -188,8 +188,12 @@ async def main():
 
 @app.on_event("startup")
 async def startup_event():
-    # Initialize e-ink display
-    eink_display.init_display()
+    # Initialize e-ink display (with error handling for permission issues)
+    try:
+        eink_display.init_display()
+    except Exception as e:
+        print(f"⚠️  E-ink initialization failed: {e}")
+        print("   Run with sudo or add user to gpio group")
     
     # Start background tasks
     asyncio.create_task(main())
@@ -208,6 +212,20 @@ async def root():
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"status": "LeakSeek Server Running"}
+
+@app.get("/{file_path:path}")
+async def serve_static(file_path: str):
+    """Serve static files (CSS, JS, etc.)"""
+    # Skip API routes
+    if file_path.startswith(("sensor_data", "discovered_devices", "connected_devices", 
+                             "registered_devices", "register", "unregister", "rename", 
+                             "ack", "generate_204", "hotspot-detect")):
+        return {"error": "Not found"}
+    
+    file = os.path.join(STATIC_DIR, file_path)
+    if os.path.exists(file) and os.path.isfile(file):
+        return FileResponse(file)
+    return {"error": "File not found"}
 
 @app.get("/generate_204")
 async def captive_portal_android():
