@@ -1,6 +1,7 @@
-// LeakSeek Firmware v2 - Advertisement-based monitoring
+// LeakSeek Firmware v2.1 - Advertisement-based monitoring with enhanced reliability
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
 #define DEBUG true
+#define FIRMWARE_VERSION "2.1.0"
 
 #include <bluefruit.h>
 #include <string.h>
@@ -13,6 +14,11 @@ uint8_t battery_percent = 100;
 uint8_t adv_mode = ADV_MODE_NORMAL;
 unsigned long alert_start_time = 0;
 const unsigned long FAST_ADV_DURATION = 5000; // 5 seconds of fast advertising
+
+// Watchdog and reliability
+unsigned long last_loop_time = 0;
+unsigned long loop_iterations = 0;
+bool is_first_boot = true;
 
 // Configure our service and characteristics
 BLEService leakseek_service = BLEService(SERVICE_UUID);
@@ -29,26 +35,45 @@ void setup() {
   Serial.begin(115200);
   wait_for_serial(2000);
 
-  DEBUG_PRINT("LeakSeek v2 - Advertisement-based monitoring");
+  DEBUG_PRINT("LeakSeek v2.1 - Advertisement-based monitoring (Enhanced)");
+  DEBUG_PRINT("Firmware Version: " FIRMWARE_VERSION);
   DEBUG_PRINT("---------------------------------------------\n");
+
+  // Configure LED for status indication
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // On during setup
 
   // Configure leak sensor pin with internal pullup
   // Pin reads HIGH normally, LOW when button pressed (connected to GND)
   pinMode(LEAK_SENSOR_PIN, INPUT_PULLUP);
   DEBUG_PRINT("Leak sensor pin configured on D9");
 
-  // Start the BLE module
+  // Enable watchdog timer (4 seconds timeout for safety)
+  // This will reset the device if it hangs
+  #ifndef DEBUG
+  // Only enable watchdog in production (not during debug/development)
+  Watchdog.enable(4000);
+  DEBUG_PRINT("Watchdog timer enabled (4s timeout)");
+  #else
+  DEBUG_PRINT("Watchdog timer DISABLED (debug mode)");
+  #endif
+
+  // Start the BLE module with optimized settings
   Bluefruit.begin(1, 0);
+  Bluefruit.setTxPower(0);  // Reduced from +4dBm to 0dBm for better power efficiency
   bond_clear_all(); // Clear all bonds for testing
 
   setup_device_and_device_information();
   setup_service();
   setup_peripheral();
-  
+
   // Start in normal mode (non-connectable)
   set_advertising_mode(ADV_MODE_NORMAL);
-  
-  DEBUG_PRINT("Waiting for events...");
+
+  digitalWrite(LED_BUILTIN, LOW); // Off after setup complete
+  is_first_boot = false;
+
+  DEBUG_PRINT("Setup complete. Waiting for events...");
 }
 
 void loop() {
@@ -57,10 +82,35 @@ void loop() {
   static uint8_t last_battery = 0xFF;
   static int8_t last_indicated_state = -1;
   static unsigned long last_incident_time = 0;
-  
-  // Toggle LED for visual feedback
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+
+  // Reset watchdog timer to prevent reset
+  #ifndef DEBUG
+  Watchdog.reset();
+  #endif
+
+  // Track loop iterations for diagnostics
+  loop_iterations++;
+  last_loop_time = millis();
+
+  // LED indication: different patterns for different states
+  static unsigned long last_led_toggle = 0;
+  unsigned long led_interval;
+
+  if (current_flags & 0x02) {
+    // Alert mode: rapid blink (100ms)
+    led_interval = 100;
+  } else if (Bluefruit.connected()) {
+    // Connected: medium blink (500ms)
+    led_interval = 500;
+  } else {
+    // Normal: slow blink (2000ms) for heartbeat
+    led_interval = 2000;
+  }
+
+  if (millis() - last_led_toggle > led_interval) {
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    last_led_toggle = millis();
+  }
 
   // Simulate leak detection for demo with cooldown to prevent duplicates
   // For real sensor: uint8_t sensor_state = (digitalRead(LEAK_SENSOR_PIN) == LOW) ? 1 : 0;
@@ -156,11 +206,16 @@ void loop() {
 
 void setup_device_and_device_information() {
   Bluefruit.setName("LeakSeek");
-  Bluefruit.setTxPower(4);
+  // TX power already set in setup() for power efficiency
 
   bledis.setManufacturer("Kozak Industries");
-  bledis.setModel("LeakSeek Drop v2.0");
+  bledis.setModel("LeakSeek Drop v2.1");
+  bledis.setFirmwareRev(FIRMWARE_VERSION);
   bledis.begin();
+
+  DEBUG_PRINT("Device name: LeakSeek");
+  DEBUG_PRINT("Manufacturer: Kozak Industries");
+  DEBUG_PRINT("Model: LeakSeek Drop v2.1");
 }
 
 void setup_service() {
@@ -185,11 +240,20 @@ void setup_service() {
 
 void setup_peripheral() {
   Bluefruit.Periph.begin();
+
+  // Optimized connection parameters for power efficiency
+  // Connection interval: 1000-1100ms (slower = less power)
+  // Slave latency: 5 (can skip 5 connection events to save power)
+  // Supervision timeout: 6000ms (allow disconnection detection)
   Bluefruit.Periph.setConnIntervalMS(1000, 1100);
   Bluefruit.Periph.setConnSlaveLatency(5);
   Bluefruit.Periph.setConnSupervisionTimeout(6000);
+
+  // Set callbacks
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+
+  DEBUG_PRINT("Peripheral configured with power-optimized connection parameters");
 }
 
 void set_advertising_mode(uint8_t mode) {
@@ -263,22 +327,35 @@ void ack_write_callback(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data
 
 void connect_callback(uint16_t conn_handle) {
   BLEConnection* connection = Bluefruit.Connection(conn_handle);
-  char central_name[32] = { 0 };
-  connection->getPeerName(central_name, sizeof(central_name));
-  
-  DEBUG_PRINT("Connected to: ");
-  DEBUG_PRINT(central_name);
+
+  if (connection) {
+    char central_name[32] = { 0 };
+    connection->getPeerName(central_name, sizeof(central_name));
+
+    DEBUG_PRINT("Connected to: ");
+    DEBUG_PRINT(central_name);
+  } else {
+    DEBUG_PRINT("Connected (peer name unavailable)");
+  }
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void) conn_handle;
-  
+
   DEBUG_PRINT("Disconnected, reason = 0x");
   DEBUG_PRINT(reason, HEX);
-  
+
+  // Common disconnect reasons:
+  // 0x13 = Remote User Terminated Connection
+  // 0x16 = Connection Terminated by Local Host
+  // 0x08 = Connection Timeout
+  // 0x3E = Connection Failed to be Established
+
   // If still in alert mode, keep advertising
   if (current_flags & 0x02) {
     DEBUG_PRINT("Still need ACK - continuing alert advertising");
+  } else {
+    DEBUG_PRINT("Disconnect after successful ACK - returning to normal mode");
   }
 }
 
