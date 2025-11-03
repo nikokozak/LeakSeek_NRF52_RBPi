@@ -128,7 +128,7 @@
 // 0 = No debug output
 // 1 = Text debug (detailed messages)
 // 2 = Graph debug (numeric values for Serial Plotter)
-#define DEBUG_MODE 2
+#define DEBUG_MODE 1
 
 // Graph debug refresh rate (only used if DEBUG_MODE == 2)
 #define GRAPH_DEBUG_INTERVAL_MS 100  // Update graph every 100ms
