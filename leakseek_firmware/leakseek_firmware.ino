@@ -23,7 +23,7 @@ const unsigned long FAST_ADV_DURATION = 5000; // 5 seconds of fast advertising
 
 // RC timing water detection state
 unsigned long rc_time_us = 0;  // Last measured RC time in microseconds
-unsigned long rc_time_history[RC_SAMPLE_COUNT] = {0};
+unsigned long rc_time_history[RC_SAMPLE_COUNT];  // Initialized in setup()
 int rc_history_index = 0;
 bool water_detected = false;
 unsigned long water_detect_time = 0;
@@ -81,7 +81,7 @@ void print_graph_debug();
 unsigned long measure_rc_time() {
   // Configure pins for discharge
   pinMode(WATER_SENSE_PIN_A, OUTPUT);
-  pinMode(WATER_SENSE_PIN_B, INPUT_PULLDOWN);
+  pinMode(WATER_SENSE_PIN_B, INPUT);  // NO pulldown - would prevent charging!
   digitalWrite(WATER_SENSE_PIN_A, LOW);
 
   // Use delayMicroseconds instead of delay for faster, more predictable timing
@@ -545,11 +545,18 @@ void setup() {
 
   // Configure RC timing water sensor pins
   pinMode(WATER_SENSE_PIN_A, OUTPUT);
-  pinMode(WATER_SENSE_PIN_B, INPUT_PULLDOWN);  // Pulldown prevents floating when disconnected
+  pinMode(WATER_SENSE_PIN_B, INPUT);  // High-impedance input (NO pulldown!)
   digitalWrite(WATER_SENSE_PIN_A, LOW);
   DEBUG_PRINT("RC timing sensor configured on pins 7 & 8 (100nF cap on pin 8)");
-  DEBUG_PRINT("Pin 8 has internal pulldown to prevent floating");
+  DEBUG_PRINT("Pin 8 set to high-impedance input (pulldown would prevent charging!)");
   DEBUG_PRINT("Expected dry time: 50-500ms, wet time: 0.5-5ms");
+
+  // Initialize RC timing history buffer with high values (dry state)
+  // This prevents false water detection during initial readings
+  for (int i = 0; i < RC_SAMPLE_COUNT; i++) {
+    rc_time_history[i] = RC_TIME_THRESHOLD_US * 2;  // Initialize to 2x threshold (safely dry)
+  }
+  DEBUG_PRINT("RC timing history buffer initialized to dry state");
 
   // Configure button pins
   // IMPORTANT: Pin 1 should NOT be used as OUTPUT LOW (fake ground)
