@@ -4,7 +4,7 @@
 // Pin 8 has 100nF capacitor to GND for RC timing measurement
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
 
-#define DEBUG false
+#define DEBUG true
 #define FIRMWARE_VERSION "2.3.0-rc-timing"
 
 #include <bluefruit.h>
@@ -198,19 +198,28 @@ bool check_water_detected() {
     // Water just appeared - start debounce timer
     if (water_detect_time == 0) {
       water_detect_time = millis();
+      DEBUG_PRINT("Water detected - starting debounce timer");
     } else if (millis() - water_detect_time > WATER_DETECTION_DEBOUNCE_MS) {
       // Water consistently detected for debounce period
       water_detected = true;
+      DEBUG_PRINT("DEBOUNCE COMPLETE - TRIGGERING ALERT!");
       return true;
+    } else {
+      unsigned long elapsed = millis() - water_detect_time;
+      DEBUG_PRINT("Debouncing... " + String(elapsed) + "ms / " + String(WATER_DETECTION_DEBOUNCE_MS) + "ms");
     }
   } else if (!water_now && water_detected) {
     // Water disappeared - clear immediately (we want to know when it dries)
     water_detected = false;
     water_detect_time = 0;
+    DEBUG_PRINT("Water cleared");
     return false;
   } else if (!water_now) {
     // Reset debounce timer if water not present
-    water_detect_time = 0;
+    if (water_detect_time != 0) {
+      DEBUG_PRINT("Debounce reset - water reading fluctuated");
+      water_detect_time = 0;
+    }
   }
 
   return water_detected;
