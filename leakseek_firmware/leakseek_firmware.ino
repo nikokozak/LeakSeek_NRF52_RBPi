@@ -79,7 +79,9 @@ void print_graph_debug();
 // RC Timing Measurement Function
 // ============================================
 unsigned long measure_rc_time() {
-  // Discharge the capacitor - non-blocking approach
+  // Configure pins for discharge
+  pinMode(WATER_SENSE_PIN_A, OUTPUT);
+  pinMode(WATER_SENSE_PIN_B, INPUT_PULLDOWN);
   digitalWrite(WATER_SENSE_PIN_A, LOW);
 
   // Use delayMicroseconds instead of delay for faster, more predictable timing
