@@ -435,8 +435,15 @@ void set_advertising_mode(uint8_t mode) {
 // ============================================
 void ack_write_callback(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
   if (len > 0 && data[0] == 0x01 && system_state == STATE_ALERT) {
-    DEBUG_PRINT("ACK received via BLE - acknowledging alert");
-    set_system_state(STATE_STOPPED);
+    DEBUG_PRINT("ACK received via BLE - central acknowledged, but buzzer continues");
+    DEBUG_PRINT("Press button to silence buzzer and freeze sensor");
+
+    // Clear needs_ack flag but stay in ALERT state (keep buzzing!)
+    current_flags = 0x01;  // leak=1, needs_ack=0
+    set_advertising_mode(ADV_MODE_NORMAL);  // Return to normal advertising speed
+
+    // Buzzer continues until button pressed - this is intentional!
+    // The buzzer guides the user to the leak location.
   }
 }
 
