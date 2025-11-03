@@ -69,14 +69,29 @@
 
 ## Known Issues & Workarounds
 
-### RBPi Bluetooth Flakiness
-**Problem**: RBPi (especially Zero 2 W) has notoriously unreliable Bluetooth
+### RBPi Zero W 2 Bluetooth Limitations (CRITICAL)
+**Hardware**: BCM43436 chip with shared 2.4GHz antenna (WiFi + BLE)
+
+**Known Issues**:
+- **Cannot scan + connect simultaneously** - Shared antenna causes RF interference
+- **BlueZ resource contention** - Stack gets confused with concurrent operations
+- **~3-5 concurrent connections max** - Very limited vs RPi 4
+- **ACK failures increase** if scanning during connection
+
 **Current Mitigations**:
 - 8-second scan windows (longer = more stable)
 - 10-second connection timeout (up from 5s)
 - Semaphore limiting to 1 concurrent connection
 - Auto-recovery in scanner loop
-- Pause scanning during ACK operations
+- **Scanner pauses during ACK** (intentional, hardware constraint)
+
+**Configuration**:
+- `ENABLE_CONCURRENT_SCAN_ACK = False` (default) - Conservative, reliable
+- `ENABLE_CONCURRENT_SCAN_ACK = True` (experimental) - May work, monitor ACK success rate
+- `ACK_SCANNER_PAUSE_DURATION = 1.0` (tunable) - Balance between coverage and reliability
+
+**Trade-off**: Devices may appear "stale" during ACK operations. This is expected on Zero W 2.
+**Solution**: Upgrade to RPi 3/4/5 for concurrent operations, or tune stale threshold to 25-30s.
 
 ### E-ink Systemd Timing Issue
 **Problem**: E-ink fails when started by systemd at boot

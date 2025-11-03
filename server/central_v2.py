@@ -31,6 +31,13 @@ STALE_THRESHOLD_SECONDS = 20
 # RSSI threshold: Only ACK devices with signal strength above this
 MIN_RSSI_FOR_ACK = -80  # dBm, adjust based on environment
 
+# RBPi Zero W 2 specific settings
+# The Zero W 2 has a shared 2.4GHz antenna (WiFi + BLE) and BCM43436 chip
+# that struggles with concurrent BLE operations. These settings help work around
+# hardware limitations.
+ENABLE_CONCURRENT_SCAN_ACK = False  # Set True for more powerful hardware
+ACK_SCANNER_PAUSE_DURATION = 1.0    # Seconds to pause scanner during ACK (Zero W 2 needs this)
+
 # Retry configuration
 MAX_ACK_RETRIES = 5
 INITIAL_RETRY_DELAY = 1.0  # seconds
@@ -92,6 +99,15 @@ alert_history = {}
 watchdog_state = {
     "last_activity": time.time(),
     "is_healthy": True
+}
+
+# Scanner continuity tracking (for debugging stale issues)
+scanner_continuity = {
+    "last_scan_start": 0,
+    "last_scan_end": 0,
+    "total_pause_time": 0.0,
+    "ack_pause_count": 0,
+    "max_gap": 0.0
 }
 
 def load_registered_cached(force=False):
@@ -206,7 +222,17 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
     Only connect when ACK is needed.
     Enhanced with metrics tracking and watchdog updates.
     """
-    global discovered_devices, watchdog_state
+    global discovered_devices, watchdog_state, scanner_continuity
+
+    # Track scan continuity for diagnostics
+    scan_start_time = time.time()
+    if scanner_continuity["last_scan_end"] > 0:
+        gap = scan_start_time - scanner_continuity["last_scan_end"]
+        scanner_continuity["max_gap"] = max(scanner_continuity["max_gap"], gap)
+        if gap > 5.0:  # Log gaps > 5 seconds
+            logging.warning(f"Scanner gap detected: {gap:.1f}s since last scan")
+
+    scanner_continuity["last_scan_start"] = scan_start_time
 
     metrics["scanner"]["scans_started"] += 1
     stop_event = asyncio.Event()
@@ -281,10 +307,14 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
         async with BleakScanner(detection_callback) as _scanner:
             await stop_event.wait()
 
+        # Track scan end time for continuity monitoring
+        scanner_continuity["last_scan_end"] = time.time()
+
         metrics["scanner"]["scans_completed"] += 1
         metrics["scanner"]["last_scan_time"] = time.time()
         metrics["scanner"]["consecutive_failures"] = 0  # Reset on success
     except Exception as e:
+        scanner_continuity["last_scan_end"] = time.time()
         metrics["scanner"]["scans_failed"] += 1
         metrics["scanner"]["consecutive_failures"] += 1
         logging.error(f"Scanner exception: {e}")
@@ -412,10 +442,28 @@ async def main():
                     else:
                         logging.critical("Failed to reset Bluetooth adapter - manual intervention may be required")
 
-        # Pause scanning if ACK in progress to reduce BLE/WiFi interference
+        # Track ACK pauses for diagnostics
         if ack_in_progress:
-            await asyncio.sleep(1)
-            continue
+            scanner_continuity["ack_pause_count"] += 1
+            pause_start = time.time()
+
+            # RBPi Zero W 2 hardware constraint: shared 2.4GHz antenna (WiFi + BLE)
+            # and BCM43436 chip struggles with concurrent scan + connection.
+            # Conservative approach: pause scanning during ACK to prevent:
+            # - RF interference (same antenna)
+            # - BlueZ stack confusion
+            # - Failed ACKs due to resource contention
+            #
+            # For more powerful hardware (RPi 3/4/5), set ENABLE_CONCURRENT_SCAN_ACK = True
+            if not ENABLE_CONCURRENT_SCAN_ACK:
+                await asyncio.sleep(ACK_SCANNER_PAUSE_DURATION)
+                scanner_continuity["total_pause_time"] += time.time() - pause_start
+                continue  # Pause scanning while ACK in progress (Zero W 2 constraint)
+            else:
+                # On more powerful hardware, just give ACK a brief head start
+                await asyncio.sleep(0.5)
+                scanner_continuity["total_pause_time"] += time.time() - pause_start
+                # Fall through - scanner runs concurrently
 
         try:
             await scanner(8)  # Longer scan, less frequent restarts
@@ -645,6 +693,11 @@ async def get_health():
         (ack_success_rate > 0.8 or metrics["ack"]["attempts"] < 5)  # Allow for initial failures
     )
 
+    # Calculate current scanner gap
+    current_gap = 0.0
+    if scanner_continuity["last_scan_end"] > 0:
+        current_gap = time.time() - scanner_continuity["last_scan_end"]
+
     return {
         "status": "healthy" if is_healthy else "degraded",
         "watchdog": {
@@ -654,16 +707,69 @@ async def get_health():
         },
         "scanner": {
             **metrics["scanner"],
-            "success_rate": scan_success_rate
+            "success_rate": scan_success_rate,
+            "current_gap_seconds": current_gap,
+            "max_gap_seconds": scanner_continuity["max_gap"],
+            "ack_pause_count": scanner_continuity["ack_pause_count"],
+            "total_pause_time": scanner_continuity["total_pause_time"]
         },
         "ack": {
             **metrics["ack"],
             "success_rate": ack_success_rate,
-            "avg_latency_seconds": avg_ack_latency
+            "avg_latency_seconds": avg_ack_latency,
+            "currently_in_progress": len(ack_in_progress)
         },
         "alerts": metrics["alerts"],
         "active_devices": len([d for d in sensor_data.values() if time.time() - d.get("timestamp", 0) < STALE_THRESHOLD_SECONDS]),
         "total_registered": len(registered_cache)
+    }
+
+@app.get("/diagnostics/stale")
+async def get_stale_diagnostics():
+    """
+    Diagnostic endpoint to help identify why devices are going stale.
+    Shows per-device timing information and scanner gaps.
+    """
+    current_time = time.time()
+    device_diagnostics = []
+
+    for address, data in sensor_data.items():
+        last_seen = data.get("timestamp", 0)
+        time_since_seen = current_time - last_seen
+        is_stale = time_since_seen > STALE_THRESHOLD_SECONDS
+
+        registered = load_registered_cached()
+        device_name = registered.get(address, {}).get("name", "Unknown")
+
+        device_diagnostics.append({
+            "address": address,
+            "name": device_name,
+            "last_seen_seconds_ago": round(time_since_seen, 1),
+            "is_stale": is_stale,
+            "rssi": data.get("rssi"),
+            "battery": data.get("battery"),
+            "needs_ack": data.get("needs_ack", False),
+            "value": data.get("value")
+        })
+
+    # Sort by time_since_seen descending (most stale first)
+    device_diagnostics.sort(key=lambda x: x["last_seen_seconds_ago"], reverse=True)
+
+    return {
+        "timestamp": current_time,
+        "stale_threshold_seconds": STALE_THRESHOLD_SECONDS,
+        "scanner_gaps": {
+            "current_gap_seconds": round(current_time - scanner_continuity["last_scan_end"], 1) if scanner_continuity["last_scan_end"] > 0 else None,
+            "max_gap_seconds": round(scanner_continuity["max_gap"], 1),
+            "ack_pause_count": scanner_continuity["ack_pause_count"],
+            "total_ack_pause_time": round(scanner_continuity["total_pause_time"], 1)
+        },
+        "devices": device_diagnostics,
+        "summary": {
+            "total_devices": len(device_diagnostics),
+            "stale_devices": sum(1 for d in device_diagnostics if d["is_stale"]),
+            "ack_in_progress": list(ack_in_progress)
+        }
     }
 
 @app.get("/metrics")
