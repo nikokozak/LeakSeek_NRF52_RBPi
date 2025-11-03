@@ -309,11 +309,14 @@ void update_buzzer() {
   }
 
   // Generate square wave at BUZZER_FREQUENCY_HZ when buzzer is on
+  // Generate multiple toggles per call to maintain proper frequency
   if (buzzer_on) {
     unsigned long now = micros();
-    if (now - buzzer_last_toggle >= BUZZER_TOGGLE_INTERVAL_US) {
+
+    // Catch up on any missed toggles (tight loop to maintain frequency)
+    while (now - buzzer_last_toggle >= BUZZER_TOGGLE_INTERVAL_US) {
       buzzer_polarity = !buzzer_polarity;
-      buzzer_last_toggle = now;
+      buzzer_last_toggle += BUZZER_TOGGLE_INTERVAL_US;
 
       if (buzzer_polarity) {
         // Positive half-cycle
@@ -324,6 +327,9 @@ void update_buzzer() {
         digitalWrite(BUZZER_PIN_POSITIVE, LOW);
         digitalWrite(BUZZER_PIN_NEGATIVE, HIGH);
       }
+
+      // Safety: don't loop forever if time gets way out of sync
+      if (micros() - now > 10000) break;  // Max 10ms of catch-up
     }
   }
 }
