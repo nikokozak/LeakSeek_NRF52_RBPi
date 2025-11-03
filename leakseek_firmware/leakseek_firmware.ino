@@ -4,7 +4,7 @@
 // Pin 8 has 100nF capacitor to GND for RC timing measurement
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
 
-#define DEBUG true
+#define DEBUG false
 #define FIRMWARE_VERSION "2.3.0-rc-timing"
 
 #include <bluefruit.h>
@@ -600,7 +600,7 @@ void setup() {
   pinMode(BUZZER_PIN_NEGATIVE, OUTPUT);
   digitalWrite(BUZZER_PIN_POSITIVE, LOW);
   digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-  DEBUG_PRINT("Buzzer configured on pins 5 & 6");
+  DEBUG_PRINT("Buzzer configured on pins 6 & 4");
 
   // Setup BLE
   setup_ble();

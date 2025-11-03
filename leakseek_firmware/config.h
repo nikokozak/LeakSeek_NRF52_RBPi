@@ -20,8 +20,8 @@
 #define BUTTON_PIN_B 1
 
 // Buzzer (3.3V) - direct drive
-#define BUZZER_PIN_POSITIVE 5
-#define BUZZER_PIN_NEGATIVE 6
+#define BUZZER_PIN_POSITIVE 6
+#define BUZZER_PIN_NEGATIVE 4
 
 // Legacy definitions (kept for compatibility)
 #define BUTTON_PIN 2          // Not used on custom PCB
