@@ -4,12 +4,26 @@
 // 0x018B is Konica Minolta, Inc. (This is what we're using)
 #define MANUFACTURER_ID 0x018B
 
-// Pin for Pair/Reset button
-#define BUTTON_PIN 2
+// ============================================
+// XIAO nRF52 Custom PCB Pin Assignments
+// ============================================
 
-// Pin for leak sensor (connected between GND and D9)
-// Button is normally open, reads HIGH. When pressed, reads LOW.
-#define LEAK_SENSOR_PIN 9
+// Water sensor: ITO two-trace interlinked-finger sensor
+// Pin 8 has 100nF capacitor to GND for filtering
+#define WATER_SENSE_PIN_A 7   // Analog input for water detection
+#define WATER_SENSE_PIN_B 8   // Reference/ground side with cap
+
+// Button for acknowledging alert (1-second hold to stop)
+#define BUTTON_PIN_A 0
+#define BUTTON_PIN_B 1
+
+// Buzzer (3.3V) - direct drive
+#define BUZZER_PIN_POSITIVE 5
+#define BUZZER_PIN_NEGATIVE 6
+
+// Legacy definitions (kept for compatibility)
+#define BUTTON_PIN 2          // Not used on custom PCB
+#define LEAK_SENSOR_PIN 9     // Not used on custom PCB
 
 // #define UUID16_SVC_ALERT_NOTIFICATION                         0x1811, in BLEUuid.h
 #define SERVICE_UUID UUID16_SVC_ALERT_NOTIFICATION
@@ -35,9 +49,42 @@
 #define ADV_INTERVAL_ALERT_SLOW 160  // 100ms (after initial burst)
 
 // Loop delay (how often we check the sensor)
-#define LOOP_DELAY_MS 1000  // Check sensor every 1 second
+#define LOOP_DELAY_MS 100  // Check sensor every 100ms for quick response
 
-// Simulation mode settings (for demo without real sensor)
+// ============================================
+// Water Detection Configuration
+// ============================================
+// Water detection uses resistance measurement between ITO traces
+// Dry: High impedance (>1MΩ), Wet: Low impedance (<100kΩ)
+// The 100nF cap on pin 8 provides filtering
+
+#define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
+#define WATER_THRESHOLD_DEFAULT 500      // ADC threshold (0-1023). Lower = more sensitive
+#define WATER_SAMPLE_COUNT 5             // Number of samples to average for stability
+#define WATER_DETECTION_DEBOUNCE_MS 200  // Debounce time before confirming water
+
+// ============================================
+// Button Configuration
+// ============================================
+#define BUTTON_HOLD_TIME_MS 1000         // 1 second hold to acknowledge alert
+#define BUTTON_DEBOUNCE_MS 50            // Debounce time for button press
+
+// ============================================
+// Buzzer Configuration
+// ============================================
+#define BUZZER_BEEP_DURATION_MS 100      // Each beep lasts 100ms
+#define BUZZER_BEEP_PAUSE_MS 100         // Pause between beeps in a sequence
+#define BUZZER_BEEPS_PER_SEQUENCE 3      // 3 beeps per sequence
+#define BUZZER_SEQUENCE_PAUSE_MS 1000    // Pause between sequences
+
+// ============================================
+// System States
+// ============================================
+#define STATE_NORMAL 0    // Normal monitoring mode
+#define STATE_ALERT 1     // Alert mode (leak detected, buzzing)
+#define STATE_STOPPED 2   // Stopped (acknowledged, waiting for reboot)
+
+// Simulation mode settings (for demo without real sensor - legacy)
 #define LEAK_CHANCE_PERCENT 5  // Percentage chance of leak per check (5 = 5%)
 #define INCIDENT_COOLDOWN_MS 15000  // Minimum 15 seconds between incidents
 
