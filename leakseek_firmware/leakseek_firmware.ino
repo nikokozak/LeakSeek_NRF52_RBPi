@@ -551,11 +551,14 @@ void setup() {
   DEBUG_PRINT("Pin 8 has internal pulldown to prevent floating");
   DEBUG_PRINT("Expected dry time: 50-500ms, wet time: 0.5-5ms");
 
-  // Configure button pins (using internal pullup for safety)
+  // Configure button pins
+  // IMPORTANT: Pin 1 should NOT be used as OUTPUT LOW (fake ground)
+  // This causes ground bounce that interferes with RC timing circuit!
+  // Instead, button should connect pin 0 to real GND
   pinMode(BUTTON_PIN_A, INPUT_PULLUP);
-  pinMode(BUTTON_PIN_B, OUTPUT);
-  digitalWrite(BUTTON_PIN_B, LOW);  // Button connects to GND
-  DEBUG_PRINT("Button configured on pins 0 & 1");
+  pinMode(BUTTON_PIN_B, INPUT);  // Set as high-impedance input (not OUTPUT LOW)
+  DEBUG_PRINT("Button configured on pin 0 (connect to real GND, not pin 1)");
+  DEBUG_PRINT("WARNING: If button uses pin 1, connect it to GND pad instead");
 
   // Configure buzzer pins (OFF initially)
   pinMode(BUZZER_PIN_POSITIVE, OUTPUT);

@@ -9,18 +9,11 @@
 // ============================================
 
 // Water sensor: ITO two-trace interlinked-finger sensor
-// Two firmware options available:
-//   1. ADC-based (leakseek_firmware_water_sensor.ino): Requires A0/A1 (analog pins)
-//   2. RC timing (leakseek_firmware_rc_timing.ino): Works with pins 7/8 (digital only!)
+// RC timing firmware uses digital pins 7 & 8
 
-// Pin assignments for ADC-based firmware (requires analog pins)
-#define WATER_SENSE_PIN_A A0   // Analog input for water detection
-#define WATER_SENSE_PIN_B A1   // Reference/ground side with cap
-
-// Pin assignments for RC timing firmware (works with digital pins!)
-// Uncomment these and comment above if using RC timing firmware:
-// #define WATER_SENSE_PIN_A 7    // Digital output for RC timing
-// #define WATER_SENSE_PIN_B 8    // Digital input with 100nF cap to GND
+// Pin assignments for RC timing firmware (current hardware)
+#define WATER_SENSE_PIN_A 7    // Digital output for RC timing
+#define WATER_SENSE_PIN_B 8    // Digital input with 100nF cap to GND
 
 // Button for acknowledging alert (1-second hold to stop)
 #define BUTTON_PIN_A 0
