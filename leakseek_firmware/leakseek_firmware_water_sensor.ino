@@ -62,6 +62,7 @@ void check_button();
 void update_buzzer();
 void set_system_state(uint8_t new_state);
 void print_water_debug();
+void print_graph_debug();
 
 // ============================================
 // Setup
@@ -120,11 +121,21 @@ void setup() {
 
   digitalWrite(LED_BUILTIN, LOW); // Off after setup complete
 
-  DEBUG_PRINT("\n========================================");
-  DEBUG_PRINT("Setup complete. System in NORMAL mode.");
-  DEBUG_PRINT("Water threshold: " + String(water_threshold));
-  DEBUG_PRINT("Monitoring for water...");
-  DEBUG_PRINT("========================================\n");
+  #if DEBUG_MODE == 1
+    DEBUG_PRINT("\n========================================");
+    DEBUG_PRINT("Setup complete. System in NORMAL mode.");
+    DEBUG_PRINT("Water threshold: " + String(water_threshold));
+    DEBUG_PRINT("Monitoring for water...");
+    DEBUG_PRINT("========================================\n");
+  #elif DEBUG_MODE == 2
+    Serial.println("\n========================================");
+    Serial.println("LeakSeek Water Sensor - GRAPH DEBUG MODE");
+    Serial.println("Open Tools > Serial Plotter");
+    Serial.print("Threshold: ");
+    Serial.println(water_threshold);
+    Serial.println("========================================\n");
+    delay(2000);  // Give user time to open plotter
+  #endif
 
   // Beep once to confirm system is ready
   digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
@@ -208,12 +219,22 @@ void loop() {
   }
 
   // ========================================
-  // Serial Debug Output (every 2 seconds in NORMAL mode)
+  // Serial Debug Output
   // ========================================
-  if (DEBUG && system_state == STATE_NORMAL && (millis() - last_debug_print > 2000)) {
-    print_water_debug();
-    last_debug_print = millis();
-  }
+  #if DEBUG_MODE == 1
+    // Text debug (every 2 seconds in NORMAL mode)
+    if (system_state == STATE_NORMAL && (millis() - last_debug_print > 2000)) {
+      print_water_debug();
+      last_debug_print = millis();
+    }
+  #elif DEBUG_MODE == 2
+    // Graph debug (fast updates for Serial Plotter)
+    static unsigned long last_graph_update = 0;
+    if (millis() - last_graph_update > GRAPH_DEBUG_INTERVAL_MS) {
+      print_graph_debug();
+      last_graph_update = millis();
+    }
+  #endif
 
   // ========================================
   // Update Battery Reading (every 60 seconds)
@@ -336,6 +357,44 @@ void print_water_debug() {
   Serial.print(" | State: ");
   Serial.println(system_state == STATE_NORMAL ? "NORMAL" :
                  system_state == STATE_ALERT ? "ALERT" : "STOPPED");
+}
+
+void print_graph_debug() {
+  // Output format optimized for Arduino Serial Plotter
+  // Format: "Label1:value1 Label2:value2 Label3:value3"
+  // This creates multiple traces on the plotter
+
+  int current_reading = analogRead(WATER_SENSE_PIN_A);  // Raw reading
+  int avg_reading = read_water_sensor();                 // Averaged reading
+
+  // Output in Serial Plotter format (space-separated, with labels)
+  Serial.print("Raw:");
+  Serial.print(current_reading);
+  Serial.print(" ");
+
+  Serial.print("Avg:");
+  Serial.print(avg_reading);
+  Serial.print(" ");
+
+  Serial.print("Threshold:");
+  Serial.print(water_threshold);
+  Serial.print(" ");
+
+  // Add state indicator (scaled to fit on graph)
+  // 0 = NORMAL, 300 = ALERT, 150 = STOPPED
+  int state_value = (system_state == STATE_NORMAL) ? 0 :
+                    (system_state == STATE_ALERT) ? 300 : 150;
+  Serial.print("State:");
+  Serial.print(state_value);
+  Serial.print(" ");
+
+  // Add threshold +/- margins for visual reference
+  Serial.print("Upper:");
+  Serial.print(water_threshold + 100);
+  Serial.print(" ");
+
+  Serial.print("Lower:");
+  Serial.println(water_threshold - 100);
 }
 
 // ============================================

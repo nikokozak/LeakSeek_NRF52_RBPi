@@ -108,6 +108,47 @@ NORMAL → (water detected) → ALERT → (button held 1s) → STOPPED
 
 ---
 
+## Graph Debug Mode (NEW!)
+
+For visualizing sensor behavior in real-time:
+
+### Enable Graph Mode
+```cpp
+// In config.h, set:
+#define DEBUG_MODE 2  // Graph debug mode
+```
+
+### Using Arduino Serial Plotter
+1. Upload firmware with DEBUG_MODE = 2
+2. Open **Tools → Serial Plotter** (not Serial Monitor!)
+3. You'll see multiple traces:
+   - **Raw**: Instantaneous reading (noisy)
+   - **Avg**: 5-sample rolling average (smooth)
+   - **Threshold**: Your configured threshold line
+   - **State**: System state (0=Normal, 300=Alert, 150=Stopped)
+   - **Upper/Lower**: Threshold ±100 (margin bands)
+
+### What to Look For
+- **Dry readings**: Should be stable, well above threshold
+- **Wet readings**: Should drop clearly below threshold
+- **Noise**: Raw trace shows noise, Avg trace should be stable
+- **Transitions**: Watch Avg cross Threshold when water applied
+
+### Quick Threshold Adjustment
+If you see:
+- **Readings ~800 when wet**: Your circuit may be inverted, or ITO traces have high baseline
+  - Try `WATER_THRESHOLD_DEFAULT 900` (threshold ABOVE wet reading)
+  - This means water INCREASES resistance (unusual but possible with some ITO designs)
+- **Readings jumping around**: Increase `WATER_SAMPLE_COUNT` to 10
+- **Slow detection**: Decrease `WATER_DETECTION_DEBOUNCE_MS` to 100
+
+### Switch Back to Text Debug
+```cpp
+#define DEBUG_MODE 1  // Text debug mode
+```
+
+---
+
 ## Tuning the ITO Trace Sensor
 
 ### Step 1: Baseline Reading (Dry)

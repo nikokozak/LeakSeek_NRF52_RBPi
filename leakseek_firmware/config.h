@@ -59,8 +59,8 @@
 // The 100nF cap on pin 8 provides filtering
 
 #define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
-#define WATER_THRESHOLD_DEFAULT 500      // ADC threshold (0-1023). Lower = more sensitive
-#define WATER_SAMPLE_COUNT 5             // Number of samples to average for stability
+#define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023). Lower = more sensitive
+#define WATER_SAMPLE_COUNT 30             // Number of samples to average for stability
 #define WATER_DETECTION_DEBOUNCE_MS 200  // Debounce time before confirming water
 
 // ============================================
@@ -88,10 +88,21 @@
 #define LEAK_CHANCE_PERCENT 5  // Percentage chance of leak per check (5 = 5%)
 #define INCIDENT_COOLDOWN_MS 15000  // Minimum 15 seconds between incidents
 
-// Debug Macro
+// ============================================
+// Debug Configuration
+// ============================================
+// Set DEBUG_MODE to choose debug output style:
+// 0 = No debug output
+// 1 = Text debug (detailed messages)
+// 2 = Graph debug (numeric values for Serial Plotter)
+#define DEBUG_MODE 2
 
-#ifdef DEBUG
-#define DEBUG_PRINT(...) if (Serial) { Serial.println(__VA_ARGS__); }
+// Graph debug refresh rate (only used if DEBUG_MODE == 2)
+#define GRAPH_DEBUG_INTERVAL_MS 100  // Update graph every 100ms
+
+// Debug Macros
+#if DEBUG_MODE == 1
+  #define DEBUG_PRINT(...) if (Serial) { Serial.println(__VA_ARGS__); }
 #else
-#define DEBUG_PRINT(...) do {} while (0)
+  #define DEBUG_PRINT(...) do {} while (0)
 #endif 

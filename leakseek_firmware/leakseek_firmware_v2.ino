@@ -1,3 +1,4 @@
+/*
 // LeakSeek Firmware v2.1 - Advertisement-based monitoring with enhanced reliability
 // See: https://github.com/adafruit/Adafruit_nRF52_Arduino/tree/master/libraries/Bluefruit52Lib/src
 #define DEBUG true
@@ -365,3 +366,4 @@ void wait_for_serial(int time) {
     delay(10);
   }
 }
+*/
