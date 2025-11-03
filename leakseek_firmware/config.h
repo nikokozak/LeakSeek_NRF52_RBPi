@@ -59,9 +59,14 @@
 // The 100nF cap on pin 8 provides filtering
 
 #define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
-#define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023). Lower = more sensitive
+#define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023)
 #define WATER_SAMPLE_COUNT 30             // Number of samples to average for stability
 #define WATER_DETECTION_DEBOUNCE_MS 200  // Debounce time before confirming water
+
+// Water detection logic mode
+// false = Normal (water DECREASES reading, trigger when reading < threshold)
+// true  = Inverted (water INCREASES reading, trigger when reading > threshold)
+#define WATER_DETECTION_INVERTED false   // Set true if wet readings are HIGHER than dry
 
 // ============================================
 // Button Configuration

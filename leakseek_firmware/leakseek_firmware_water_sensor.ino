@@ -327,8 +327,15 @@ int read_water_sensor() {
 bool check_water_detected() {
   int avg_reading = read_water_sensor();
 
-  // Water detected if reading is BELOW threshold (more conductive)
-  bool water_now = (avg_reading < water_threshold);
+  // Water detection logic depends on circuit design
+  bool water_now;
+  #if WATER_DETECTION_INVERTED
+    // Inverted: Water INCREASES reading (reading > threshold)
+    water_now = (avg_reading > water_threshold);
+  #else
+    // Normal: Water DECREASES reading (reading < threshold, more conductive)
+    water_now = (avg_reading < water_threshold);
+  #endif
 
   // Debounce: water must be detected continuously for WATER_DETECTION_DEBOUNCE_MS
   if (water_now && !water_detected) {
@@ -352,8 +359,16 @@ void print_water_debug() {
   Serial.print(avg_reading);
   Serial.print(" | Threshold: ");
   Serial.print(water_threshold);
-  Serial.print(" | Status: ");
-  Serial.print(avg_reading < water_threshold ? "WET" : "DRY");
+
+  // Show comparison operator based on mode
+  #if WATER_DETECTION_INVERTED
+    Serial.print(" (>) | Status: ");
+    Serial.print(avg_reading > water_threshold ? "WET" : "DRY");
+  #else
+    Serial.print(" (<) | Status: ");
+    Serial.print(avg_reading < water_threshold ? "WET" : "DRY");
+  #endif
+
   Serial.print(" | State: ");
   Serial.println(system_state == STATE_NORMAL ? "NORMAL" :
                  system_state == STATE_ALERT ? "ALERT" : "STOPPED");
