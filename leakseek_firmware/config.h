@@ -107,7 +107,7 @@
 #define BUZZER_SEQUENCE_PAUSE_MS 1000    // Pause between sequences
 
 // Square wave generation for piezo buzzers
-#define BUZZER_FREQUENCY_HZ 2700         // 2.7kHz - typical resonant frequency for piezo
+#define BUZZER_FREQUENCY_HZ 4000         // 4kHz - resonant frequency for this piezo buzzer
 #define BUZZER_TOGGLE_INTERVAL_US (1000000 / (BUZZER_FREQUENCY_HZ * 2))  // Half-period in microseconds
 
 // ============================================
