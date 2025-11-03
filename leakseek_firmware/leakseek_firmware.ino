@@ -660,25 +660,30 @@ void loop() {
     NRF_WDT->RR[0] = WDT_RR_RR_Reload;
   #endif
 
-  // State machine logic
-  if (system_state == STATE_NORMAL) {
-    // Monitor for water detection
-    if (check_water_detected()) {
-      set_system_state(STATE_ALERT);
-    }
-  } else if (system_state == STATE_ALERT) {
-    // Continue checking water status
-    check_water_detected();
+  // State machine logic (with non-blocking sensor timing)
+  static unsigned long last_sensor_check = 0;
+  if (millis() - last_sensor_check >= LOOP_DELAY_MS) {
+    last_sensor_check = millis();
 
-    // Update advertising if we've passed fast advertising duration
-    if (millis() - alert_start_time > FAST_ADV_DURATION &&
-        adv_mode == ADV_MODE_ALERT) {
-      set_advertising_mode(ADV_MODE_ALERT);  // Will set to slow interval
+    if (system_state == STATE_NORMAL) {
+      // Monitor for water detection
+      if (check_water_detected()) {
+        set_system_state(STATE_ALERT);
+      }
+    } else if (system_state == STATE_ALERT) {
+      // Continue checking water status
+      check_water_detected();
+
+      // Update advertising if we've passed fast advertising duration
+      if (millis() - alert_start_time > FAST_ADV_DURATION &&
+          adv_mode == ADV_MODE_ALERT) {
+        set_advertising_mode(ADV_MODE_ALERT);  // Will set to slow interval
+      }
+    } else if (system_state == STATE_STOPPED) {
+      // Stopped - waiting for reboot
+      // Still check water status for debug purposes
+      check_water_detected();
     }
-  } else if (system_state == STATE_STOPPED) {
-    // Stopped - waiting for reboot
-    // Still check water status for debug purposes
-    check_water_detected();
   }
 
   // Always check button and update buzzer
@@ -702,8 +707,8 @@ void loop() {
     }
   #endif
 
-  // Loop delay
-  delay(LOOP_DELAY_MS);
+  // No delay! Need to run fast for buzzer square wave generation
+  // Sensor checking is handled by non-blocking timing in state machine
 
   loop_iterations++;
   last_loop_time = millis();
