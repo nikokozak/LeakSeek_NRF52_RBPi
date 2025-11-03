@@ -9,11 +9,18 @@
 // ============================================
 
 // Water sensor: ITO two-trace interlinked-finger sensor
-// Pin A1 has 100nF capacitor to GND for filtering
-// IMPORTANT: Pins 7 & 8 are digital-only on XIAO nRF52!
-// Must use A0-A5 for analog input (ADC-capable)
+// Two firmware options available:
+//   1. ADC-based (leakseek_firmware_water_sensor.ino): Requires A0/A1 (analog pins)
+//   2. RC timing (leakseek_firmware_rc_timing.ino): Works with pins 7/8 (digital only!)
+
+// Pin assignments for ADC-based firmware (requires analog pins)
 #define WATER_SENSE_PIN_A A0   // Analog input for water detection
 #define WATER_SENSE_PIN_B A1   // Reference/ground side with cap
+
+// Pin assignments for RC timing firmware (works with digital pins!)
+// Uncomment these and comment above if using RC timing firmware:
+// #define WATER_SENSE_PIN_A 7    // Digital output for RC timing
+// #define WATER_SENSE_PIN_B 8    // Digital input with 100nF cap to GND
 
 // Button for acknowledging alert (1-second hold to stop)
 #define BUTTON_PIN_A 0
@@ -54,21 +61,43 @@
 #define LOOP_DELAY_MS 100  // Check sensor every 100ms for quick response
 
 // ============================================
-// Water Detection Configuration
+// Water Detection Configuration - ADC Method
 // ============================================
-// Water detection uses resistance measurement between ITO traces
-// Dry: High impedance (>1MΩ), Wet: Low impedance (<100kΩ)
-// The 100nF cap on pin 8 provides filtering
+// For leakseek_firmware_water_sensor.ino (requires analog pins A0/A1)
+// Water detection uses resistance measurement between ITO traces via ADC
+// Dry: High impedance (>1MΩ) → High ADC reading (700-1023)
+// Wet: Low impedance (<100kΩ) → Low ADC reading (0-500)
 
 #define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
 #define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023)
-#define WATER_SAMPLE_COUNT 30             // Number of samples to average for stability
+#define WATER_SAMPLE_COUNT 30            // Number of samples to average for stability
 #define WATER_DETECTION_DEBOUNCE_MS 200  // Debounce time before confirming water
 
 // Water detection logic mode
 // false = Normal (water DECREASES reading, trigger when reading < threshold)
 // true  = Inverted (water INCREASES reading, trigger when reading > threshold)
 #define WATER_DETECTION_INVERTED false   // Set true if wet readings are HIGHER than dry
+
+// ============================================
+// Water Detection Configuration - RC Timing Method
+// ============================================
+// For leakseek_firmware_rc_timing.ino (works with digital pins 7/8!)
+// Uses RC time constant measurement with 100nF capacitor
+// Dry: High resistance (>1MΩ) → Slow charge → Long time (50-500ms)
+// Wet: Low resistance (<100kΩ) → Fast charge → Short time (0.5-5ms)
+
+#define RC_TIME_THRESHOLD_US 20000       // RC time threshold in microseconds (20ms = 20000us)
+                                         // Times < threshold = WET (fast charge)
+                                         // Times > threshold = DRY (slow charge)
+                                         // Recommended: 15000-25000 us (15-25ms)
+
+#define RC_SAMPLE_COUNT 5                // Number of RC timing samples to average
+                                         // Higher = more stable, slower response
+                                         // Lower = faster response, more noise
+                                         // Recommended: 3-10
+
+#define RC_DETECTION_INVERTED false      // Set true if water INCREASES charge time
+                                         // (unusual, but possible with some circuits)
 
 // ============================================
 // Button Configuration
