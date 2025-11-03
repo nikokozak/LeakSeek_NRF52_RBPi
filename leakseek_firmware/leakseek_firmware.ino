@@ -611,6 +611,20 @@ void setup() {
   digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
   DEBUG_PRINT("Buzzer configured on pins 6 & 4");
 
+  // Test buzzer at startup (short beep)
+  DEBUG_PRINT("Testing buzzer...");
+  for (int i = 0; i < 400; i++) {  // 400 cycles at 4kHz = 100ms beep
+    digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
+    digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
+    delayMicroseconds(125);  // 4kHz half-period
+    digitalWrite(BUZZER_PIN_POSITIVE, LOW);
+    digitalWrite(BUZZER_PIN_NEGATIVE, HIGH);
+    delayMicroseconds(125);
+  }
+  digitalWrite(BUZZER_PIN_POSITIVE, LOW);
+  digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
+  DEBUG_PRINT("Buzzer test complete - did you hear a beep?");
+
   // Setup BLE
   setup_ble();
 
