@@ -106,6 +106,10 @@
 #define BUZZER_BEEPS_PER_SEQUENCE 3      // 3 beeps per sequence
 #define BUZZER_SEQUENCE_PAUSE_MS 1000    // Pause between sequences
 
+// Square wave generation for piezo buzzers
+#define BUZZER_FREQUENCY_HZ 2700         // 2.7kHz - typical resonant frequency for piezo
+#define BUZZER_TOGGLE_INTERVAL_US (1000000 / (BUZZER_FREQUENCY_HZ * 2))  // Half-period in microseconds
+
 // ============================================
 // System States
 // ============================================

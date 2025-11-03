@@ -39,6 +39,8 @@ unsigned long buzzer_last_beep = 0;
 int buzzer_beep_count = 0;
 bool buzzer_on = false;
 unsigned long buzzer_sequence_start = 0;
+bool buzzer_polarity = false;  // For square wave generation
+unsigned long buzzer_last_toggle = 0;
 
 // System state machine
 uint8_t system_state = STATE_NORMAL;
@@ -286,15 +288,34 @@ void update_buzzer() {
     should_beep = true;
   }
 
-  // Update buzzer state
+  // Update buzzer state (on/off envelope)
   if (should_beep && !buzzer_on) {
-    digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
-    digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
     buzzer_on = true;
+    buzzer_last_toggle = micros();
   } else if (!should_beep && buzzer_on) {
+    // Turn off completely
     digitalWrite(BUZZER_PIN_POSITIVE, LOW);
     digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
     buzzer_on = false;
+  }
+
+  // Generate square wave at BUZZER_FREQUENCY_HZ when buzzer is on
+  if (buzzer_on) {
+    unsigned long now = micros();
+    if (now - buzzer_last_toggle >= BUZZER_TOGGLE_INTERVAL_US) {
+      buzzer_polarity = !buzzer_polarity;
+      buzzer_last_toggle = now;
+
+      if (buzzer_polarity) {
+        // Positive half-cycle
+        digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
+        digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
+      } else {
+        // Negative half-cycle
+        digitalWrite(BUZZER_PIN_POSITIVE, LOW);
+        digitalWrite(BUZZER_PIN_NEGATIVE, HIGH);
+      }
+    }
   }
 }
 
