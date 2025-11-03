@@ -2,30 +2,19 @@
 
 This directory contains firmware for the XIAO nRF52 water sensor module.
 
-## Current Firmware Files
+## Current Firmware
 
-### Water Sensor Implementations
-
-**Choose ONE based on your hardware:**
-
-#### 1. `leakseek_firmware_rc_timing.ino` (RECOMMENDED)
+### `leakseek_firmware_rc_timing.ino`
 - **For PCBs with ITO traces on pins 7 & 8**
 - Uses RC time constant measurement (digital pins only)
 - **No PCB rework needed!**
 - Works with existing 100nF capacitor
 - Detection: Fast charge (<20ms) = wet, slow charge (>50ms) = dry
-- See: `RC_TIMING_GUIDE.md` for details
-
-#### 2. `leakseek_firmware_water_sensor.ino` (Alternative)
-- **Requires PCB rework to connect ITO traces to A0 & A1**
-- Uses ADC (analog-to-digital converter)
-- Slightly better precision than RC timing
-- Detection: Low voltage (<threshold) = wet, high voltage = dry
-- See: `WATER_SENSOR_GUIDE.md` for details
+- See: `RC_TIMING_GUIDE.md` for complete guide
 
 ### Configuration
 
-#### 3. `config.h`
+### `config.h`
 - Shared configuration for all firmware
 - Pin assignments
 - Thresholds and timing parameters
@@ -34,55 +23,33 @@ This directory contains firmware for the XIAO nRF52 water sensor module.
 
 ## Quick Start
 
-### For Existing PCBs (pins 7 & 8):
-
 1. Upload `leakseek_firmware_rc_timing.ino`
 2. Open Serial Monitor (115200 baud) or Serial Plotter
 3. Test with water on ITO traces
-4. Tune `RC_TIME_THRESHOLD_US` in `config.h` if needed
-
-### For New PCBs (pins A0 & A1):
-
-1. Ensure ITO traces connected to A0 & A1 (NOT 7 & 8!)
-2. Upload `leakseek_firmware_water_sensor.ino`
-3. Open Serial Monitor or Serial Plotter
-4. Test with water on ITO traces
-5. Tune `WATER_THRESHOLD_DEFAULT` in `config.h` if needed
-
-### Troubleshooting:
-
-Refer to XIAO nRF52 schematics for pin capabilities:
-- A0-A5: Analog-capable (ADC)
-- Other pins: Digital only
+4. Tune `RC_TIME_THRESHOLD_US` in `config.h` if needed (default: 20000 = 20ms)
 
 ## Documentation
 
 - **CLAUDE.md** - System architecture and reference
-- **RC_TIMING_GUIDE.md** - RC timing implementation details
-- **WATER_SENSOR_GUIDE.md** - ADC water sensor details
-- **PIN_FIX.md** - Pin assignment issue and solutions
+- **RC_TIMING_GUIDE.md** - Complete RC timing implementation guide
 - **ROBUSTNESS_IMPROVEMENTS.md** - v2.1 reliability improvements
 - **STALE_DEVICE_FIX.md** - RBPi Zero W 2 constraints
 
-## Firmware Versions
+## Firmware Version
 
 - **v2.3** - RC timing water sensor (current)
-- **v2.2** - ADC water sensor (current)
-- **v2.1** - Production reliability improvements
-- **v1.0** - Original (obsolete, removed)
 
 ## Hardware Requirements
 
 - XIAO nRF52 module (Seeed Studio)
 - CR2032 coin cell (3.3V)
 - ITO two-trace interlinked-finger sensor
-- 100nF capacitor (pin 8 or A1 to GND)
+- 100nF capacitor (pin 8 to GND)
 - Pushbutton (pins 0 & 1)
 - 3.3V Buzzer (pins 5 & 6)
 
 ## Pin Assignments
 
-### RC Timing Firmware (pins 7 & 8):
 ```
 Pin 7: ITO Trace A (digital output)
 Pin 8: ITO Trace B (digital input, 100nF cap to GND)
@@ -90,16 +57,6 @@ Pin 0: Button A (INPUT_PULLUP)
 Pin 1: Button B (OUTPUT LOW)
 Pin 5: Buzzer Positive
 Pin 6: Buzzer Negative
-```
-
-### ADC Firmware (pins A0 & A1):
-```
-Pin A0: ITO Trace A (analog input)
-Pin A1: ITO Trace B (reference, 100nF cap to GND)
-Pin 0:  Button A (INPUT_PULLUP)
-Pin 1:  Button B (OUTPUT LOW)
-Pin 5:  Buzzer Positive
-Pin 6:  Buzzer Negative
 ```
 
 ## Serial Debug Modes
@@ -115,7 +72,6 @@ Set in `config.h`:
 ### Text Mode (DEBUG_MODE = 1):
 ```
 RC Time: 85342 us | Threshold: 20000 us | Status: DRY | State: NORMAL
-Water Sensor: 892 | Threshold: 500 | Status: DRY | State: NORMAL
 ```
 
 ### Graph Mode (DEBUG_MODE = 2):
