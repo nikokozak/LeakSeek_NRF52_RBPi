@@ -1,23 +1,39 @@
 # LeakSeek Water Sensor Implementation Guide
 
+## ⚠️ CRITICAL PIN UPDATE ⚠️
+
+**IMPORTANT**: The original pin assignments (pins 7 & 8) for the ITO water sensor **DO NOT WORK** because these pins are **digital-only** on the XIAO nRF52 and cannot read analog values.
+
+**SOLUTION**: ITO traces MUST be connected to **pins A0 & A1** (analog-capable pins).
+
+If your PCB is already fabricated with pins 7 & 8, you will need to:
+1. Cut traces to pins 7 & 8, OR
+2. Rework/jump wires to A0 & A1, OR
+3. Redesign PCB with correct pin assignments
+
+---
+
 ## Hardware Setup - XIAO nRF52 Custom PCB
 
 ### Components
 - **Power**: CR2032 coin cell → 3.3V/GND
-- **Water Sensor**: ITO two-trace interlinked-finger sensor (Pins 7 & 8)
-  - Pin 8 has 100nF capacitor to GND for filtering
+- **Water Sensor**: ITO two-trace interlinked-finger sensor (Pins A0 & A1)
+  - Pin A1 has 100nF capacitor to GND for filtering
+  - **CRITICAL**: Must use analog-capable pins (A0-A5), pins 7 & 8 are digital-only!
 - **Button**: Standard pushbutton (Pins 0 & 1)
 - **Buzzer**: 3.3V buzzer (Pins 5 & 6)
 
 ### Pin Assignments
 ```
-Pin 7: Water Sense A (Analog input)
-Pin 8: Water Sense B (Reference, 100nF cap to GND)
-Pin 0: Button A (INPUT_PULLUP)
-Pin 1: Button B (OUTPUT LOW - GND)
-Pin 5: Buzzer Positive
-Pin 6: Buzzer Negative
+Pin A0: Water Sense A (Analog input) - MUST BE ANALOG PIN!
+Pin A1: Water Sense B (Reference, 100nF cap to GND)
+Pin 0:  Button A (INPUT_PULLUP)
+Pin 1:  Button B (OUTPUT LOW - GND)
+Pin 5:  Buzzer Positive
+Pin 6:  Buzzer Negative
 ```
+
+**IMPORTANT PCB NOTE**: If your PCB was originally wired with pins 7 & 8 for the ITO sensor, you MUST rewire to A0 & A1. Pins 7 & 8 are digital-only on XIAO nRF52 and cannot read analog values!
 
 ---
 
@@ -312,16 +328,17 @@ If detection is too slow:
 ### Issue: Sensor Never Detects Water
 
 **Possible Causes**:
-1. Threshold too low
-2. Poor electrical contact
-3. Trace spacing too wide
+1. **Wrong pins used** (pins 7 & 8 are digital-only!)
+2. Threshold too low
+3. Poor electrical contact
+4. Trace spacing too wide
 
 **Solutions**:
-1. Check wet reading in Serial Monitor
-2. If wet reading > 500, water not bridging properly
-3. Increase water volume or use more conductive water (add salt)
-4. Decrease threshold in config.h
-5. Verify pin connections (7 & 8)
+1. **FIRST**: Verify ITO traces connected to A0 & A1, NOT pins 7 & 8
+2. Check wet reading in Serial Monitor
+3. If wet reading > 500, water not bridging properly
+4. Increase water volume or use more conductive water (add salt)
+5. Decrease threshold in config.h
 
 ### Issue: Buzzer Not Working
 

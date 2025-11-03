@@ -9,9 +9,11 @@
 // ============================================
 
 // Water sensor: ITO two-trace interlinked-finger sensor
-// Pin 8 has 100nF capacitor to GND for filtering
-#define WATER_SENSE_PIN_A 7   // Analog input for water detection
-#define WATER_SENSE_PIN_B 8   // Reference/ground side with cap
+// Pin A1 has 100nF capacitor to GND for filtering
+// IMPORTANT: Pins 7 & 8 are digital-only on XIAO nRF52!
+// Must use A0-A5 for analog input (ADC-capable)
+#define WATER_SENSE_PIN_A A0   // Analog input for water detection
+#define WATER_SENSE_PIN_B A1   // Reference/ground side with cap
 
 // Button for acknowledging alert (1-second hold to stop)
 #define BUTTON_PIN_A 0
