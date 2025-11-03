@@ -23,17 +23,9 @@ This directory contains firmware for the XIAO nRF52 water sensor module.
 - Detection: Low voltage (<threshold) = wet, high voltage = dry
 - See: `WATER_SENSOR_GUIDE.md` for details
 
-### Diagnostic Tools
-
-#### 3. `pin_diagnostic.ino`
-- Tests all pins for analog capability
-- Verifies ITO sensor connections
-- Helps identify pin assignment issues
-- Upload this first if having sensor problems
-
 ### Configuration
 
-#### 4. `config.h`
+#### 3. `config.h`
 - Shared configuration for all firmware
 - Pin assignments
 - Thresholds and timing parameters
@@ -59,10 +51,9 @@ This directory contains firmware for the XIAO nRF52 water sensor module.
 
 ### Troubleshooting:
 
-1. Upload `pin_diagnostic.ino`
-2. Check which pins are working
-3. Verify ITO sensor connections
-4. Choose appropriate firmware based on results
+Refer to XIAO nRF52 schematics for pin capabilities:
+- A0-A5: Analog-capable (ADC)
+- Other pins: Digital only
 
 ## Documentation
 
