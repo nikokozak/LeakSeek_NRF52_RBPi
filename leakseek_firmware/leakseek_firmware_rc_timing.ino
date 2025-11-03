@@ -309,12 +309,13 @@ void setup_ble() {
   Bluefruit.setName("LeakSeek");
 
   // Configure connection parameters for power savings
-  Bluefruit.Periph.setConnInterval(12, 24);  // 15-30ms
-  Bluefruit.Periph.setConnSupervisionTimeout(400);  // 4s timeout
+  Bluefruit.Periph.setConnIntervalMS(15, 30);  // 15-30ms
+  Bluefruit.Periph.setConnSlaveLatency(5);  // Can skip 5 events
+  Bluefruit.Periph.setConnSupervisionTimeout(4000);  // 4s timeout
 
   // Setup device information service
   bledis.setManufacturer("LeakSeek");
-  bledis.setModel("nRF52-v2.3");
+  bledis.setModel("nRF52-RC-v2.3");
   bledis.begin();
 
   // Setup custom service
@@ -325,15 +326,15 @@ void setup_ble() {
   leakseek_characteristic.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
   leakseek_characteristic.setFixedLen(1);
   leakseek_characteristic.begin();
-  uint8_t initial_value = 0;
-  leakseek_characteristic.write(&initial_value, 1);
+  leakseek_characteristic.write8(0);
 
   // Setup ACK characteristic (write)
-  ack_characteristic.setProperties(CHR_PROPS_WRITE);
+  ack_characteristic.setProperties(CHR_PROPS_WRITE | CHR_PROPS_WRITE_WO_RESP);
   ack_characteristic.setPermission(SECMODE_OPEN, SECMODE_OPEN);
   ack_characteristic.setFixedLen(1);
   ack_characteristic.setWriteCallback(ack_write_callback);
   ack_characteristic.begin();
+  ack_characteristic.write8(0);
 
   DEBUG_PRINT("BLE services initialized");
 }
@@ -347,38 +348,43 @@ void set_advertising_mode(uint8_t mode) {
   Bluefruit.Advertising.stop();
   Bluefruit.Advertising.clearData();
 
-  // Set advertising interval based on mode
-  if (mode == ADV_MODE_ALERT && (millis() - alert_start_time < FAST_ADV_DURATION)) {
-    Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_FAST);  // 20ms for first 5 seconds
-  } else if (mode == ADV_MODE_ALERT) {
-    Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_SLOW);  // 100ms after initial burst
-  } else {
-    Bluefruit.Advertising.setInterval(ADV_INTERVAL_NORMAL);  // 1000ms for normal
-  }
-
-  Bluefruit.Advertising.setFastTimeout(0);  // No timeout
-
   // Include standard fields
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addName();
 
-  // Manufacturer data: 6 bytes
-  // [0]: Protocol version (1)
-  // [1]: Flags (bit0=leak, bit1=needs_ack)
-  // [2]: Sequence number
-  // [3]: Battery percent
-  // [4-5]: Reserved
-  uint8_t mfg_data[6] = {
-    PROTOCOL_VERSION,
-    current_flags,
-    current_seq,
-    battery_percent,
-    0x00,
-    0x00
-  };
+  // Manufacturer data: 6 bytes (format matches Seeeduino library)
+  // [0-1]: Manufacturer ID (little-endian)
+  // [2]: Protocol version
+  // [3]: Flags (bit0=leak, bit1=needs_ack)
+  // [4]: Sequence number
+  // [5]: Battery percent
+  uint8_t adv_data[6];
+  adv_data[0] = MANUFACTURER_ID & 0xFF;
+  adv_data[1] = (MANUFACTURER_ID >> 8) & 0xFF;
+  adv_data[2] = PROTOCOL_VERSION;
+  adv_data[3] = current_flags;
+  adv_data[4] = current_seq;
+  adv_data[5] = battery_percent;
+  Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, adv_data, 6);
 
-  Bluefruit.Advertising.addManufacturerData(MANUFACTURER_ID, mfg_data, 6);
+  // Set advertising interval and type based on mode
+  if (mode == ADV_MODE_ALERT) {
+    // Alert mode: connectable, fast advertising
+    Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
+    if (millis() - alert_start_time < FAST_ADV_DURATION) {
+      Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_FAST, ADV_INTERVAL_ALERT_FAST + 16);
+    } else {
+      Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_SLOW, ADV_INTERVAL_ALERT_SLOW + 16);
+    }
+    Bluefruit.Advertising.setFastTimeout(30);
+  } else {
+    // Normal mode: non-connectable, slow advertising
+    Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED);
+    Bluefruit.Advertising.setInterval(ADV_INTERVAL_NORMAL, ADV_INTERVAL_NORMAL);
+  }
+
+  Bluefruit.Advertising.restartOnDisconnect(true);
   Bluefruit.Advertising.start(0);  // Advertise forever
 
   DEBUG_PRINT("Advertising mode set to: " + String(mode == ADV_MODE_ALERT ? "ALERT" : "NORMAL"));
