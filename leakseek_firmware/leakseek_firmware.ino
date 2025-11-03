@@ -79,45 +79,42 @@ void print_graph_debug();
 // RC Timing Measurement Function
 // ============================================
 unsigned long measure_rc_time() {
-  // First, check for open circuit / disconnected sensor
-  // If pin 8 is already HIGH when we haven't charged it, sensor is disconnected
-  pinMode(WATER_SENSE_PIN_A, OUTPUT);
-  pinMode(WATER_SENSE_PIN_B, INPUT);
+  // Discharge the capacitor - non-blocking approach
   digitalWrite(WATER_SENSE_PIN_A, LOW);
-  delay(10);  // Let it discharge
 
-  // Check if pin is stuck HIGH (disconnected/floating)
+  // Use delayMicroseconds instead of delay for faster, more predictable timing
+  // 10ms = 10000 microseconds - enough for full discharge
+  delayMicroseconds(10000);
+
+  // Check if pin is stuck HIGH after discharge (disconnected/floating)
   if (digitalRead(WATER_SENSE_PIN_B) == HIGH) {
-    // Sensor disconnected or floating - return error value
-    DEBUG_PRINT("WARNING: Sensor appears disconnected (pin 8 stuck HIGH)");
-    return 999999;  // Special error value
+    // Sensor disconnected or floating - return error value immediately
+    static unsigned long last_warning = 0;
+    if (millis() - last_warning > 1000) {  // Limit debug spam
+      DEBUG_PRINT("WARNING: Sensor disconnected");
+      last_warning = millis();
+    }
+    return 150000;  // Return high value but not timeout
   }
 
-  // Discharge the capacitor fully
-  digitalWrite(WATER_SENSE_PIN_A, LOW);
-  delay(10);  // Full discharge (>10τ for wettest case: 10 * 1ms = 10ms)
-
-  // Configure for charging
+  // Start charging
   digitalWrite(WATER_SENSE_PIN_A, HIGH);
-
-  // Measure time to reach logic HIGH threshold (~1.65V on 3.3V system)
   unsigned long start = micros();
 
-  // Wait for pin to go HIGH with much shorter timeout (200ms instead of 1s)
-  // This prevents MCU from appearing frozen on poor connections
+  // Optimized timeout loop - reduced from 200ms to 100ms
+  // This is still 2x the expected dry time (~50ms max for normal operation)
   while (digitalRead(WATER_SENSE_PIN_B) == LOW) {
     unsigned long elapsed = micros() - start;
 
-    // Timeout after 200ms - sensor likely disconnected or very high resistance
-    if (elapsed > 200000) {
+    // Timeout after 100ms - much faster recovery from bad connections
+    if (elapsed > 100000) {
       digitalWrite(WATER_SENSE_PIN_A, LOW);
-      DEBUG_PRINT("WARNING: RC timeout (>200ms) - check sensor connection");
-      return 200000;  // Return timeout value
-    }
-
-    // Yield occasionally to prevent complete blocking (every ~10ms check)
-    if (elapsed % 10000 == 0) {
-      delayMicroseconds(10);
+      static unsigned long last_timeout = 0;
+      if (millis() - last_timeout > 1000) {  // Limit debug spam
+        DEBUG_PRINT("WARNING: RC timeout (>100ms)");
+        last_timeout = millis();
+      }
+      return 100000;  // Return timeout value
     }
   }
 
@@ -136,16 +133,17 @@ unsigned long read_water_sensor() {
   // Take new RC timing measurement
   unsigned long current_time = measure_rc_time();
 
-  // Reject obviously bad readings (disconnected sensor)
-  // Values >150ms indicate disconnected or extremely poor connection
-  if (current_time > 150000) {
+  // Reject obviously bad readings (disconnected sensor or timeout)
+  // Values >80ms indicate disconnected or extremely poor connection
+  // (Normal dry is ~50ms, so 80ms is well above normal but below timeout)
+  if (current_time > 80000) {
     // Don't update history buffer with bad reading
     // Return last good average or a high value if no good history
     unsigned long sum = 0;
     int valid_count = 0;
 
     for (int i = 0; i < RC_SAMPLE_COUNT; i++) {
-      if (rc_time_history[i] < 150000) {
+      if (rc_time_history[i] < 80000) {
         sum += rc_time_history[i];
         valid_count++;
       }
@@ -154,7 +152,7 @@ unsigned long read_water_sensor() {
     if (valid_count > 0) {
       return sum / valid_count;  // Average of valid samples
     } else {
-      return 150000;  // All samples bad, return high value
+      return 80000;  // All samples bad, return high value
     }
   }
 
