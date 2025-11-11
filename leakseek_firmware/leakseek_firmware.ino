@@ -326,12 +326,22 @@ void check_button() {
     button_debounce_flag = false;
   }
 
-  // Check for 2-second hold to trigger reboot (works in any state)
+  // Check for 2-second hold to reboot (works in ANY state)
   if (button_pressed) {
     if (millis() - button_press_start >= 2000) {  // 2 seconds
       DEBUG_PRINT("BUTTON HELD FOR 2 SECONDS - REBOOTING!");
       delay(100);  // Brief delay to let serial print
       NVIC_SystemReset();  // Software reset (ARM Cortex-M4 standard)
+    }
+  }
+
+  // Check for 1-second hold (only in ALERT state) - but only if not already past 2s
+  if (button_pressed && system_state == STATE_ALERT) {
+    if (millis() - button_press_start >= BUTTON_HOLD_TIME_MS &&
+        millis() - button_press_start < 2000) {
+      DEBUG_PRINT("BUTTON HELD FOR 1 SECOND - ACKNOWLEDGING ALERT");
+      set_system_state(STATE_STOPPED);
+      button_pressed = false;  // Reset button state
     }
   }
 }
@@ -404,7 +414,6 @@ void set_system_state(uint8_t new_state) {
       buzzer_last_beep = millis() - (BUZZER_BEEP_DURATION_MS + BUZZER_BEEP_PAUSE_MS);  // Beep immediately
       DEBUG_PRINT("!!! WATER DETECTED !!!");
       DEBUG_PRINT("Entered ALERT mode - sequence " + String(current_seq));
-      DEBUG_PRINT("Hold button 2s to silence buzzer and reboot");
       break;
 
     case STATE_STOPPED:
@@ -412,8 +421,8 @@ void set_system_state(uint8_t new_state) {
       set_advertising_mode(ADV_MODE_NORMAL);
       digitalWrite(BUZZER_PIN_POSITIVE, LOW);
       digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-      DEBUG_PRINT("Entered STOPPED mode");
-      DEBUG_PRINT("Hold button 2s to reboot");
+      DEBUG_PRINT("Entered STOPPED mode - alert acknowledged");
+      DEBUG_PRINT("Dry sensor, then hold button 2s to reboot");
       break;
   }
 }
