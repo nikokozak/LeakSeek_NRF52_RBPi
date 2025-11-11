@@ -294,7 +294,7 @@ bool check_water_detected() {
 // Button Handling
 // ============================================
 void check_button() {
-  bool button_state = (digitalRead(BUTTON_PIN_A) == HIGH);  // Active high (Pin 1 is OUTPUT HIGH)
+  bool button_state = (digitalRead(BUTTON_PIN_A) == LOW);  // Active low (pullup, button to GND)
 
   // Debounce
   if (button_state != button_pressed) {
@@ -650,16 +650,13 @@ void setup() {
   DEBUG_PRINT("RC timing history buffer initialized to 50ms (dry state)");
   DEBUG_PRINT("Baseline learning will begin - please keep sensor DRY for 2 seconds!");
 
-  // Configure button pins for hardware setup:
-  // Pin 0: Connected to button A, has 10Ω resistor to GND
-  // Pin 1: Connected to button B, acts as voltage source (OUTPUT HIGH)
-  // When button pressed: Pin 0 pulled HIGH through button from Pin 1
-  // When button released: Pin 0 pulled LOW through 10Ω to GND
-  pinMode(BUTTON_PIN_A, INPUT);  // No pullup - external 10Ω to GND
-  pinMode(BUTTON_PIN_B, OUTPUT);
-  digitalWrite(BUTTON_PIN_B, HIGH);  // Pin 1 acts as 3.3V source
-  DEBUG_PRINT("Button configured: Pin 0 (INPUT with 10Ω to GND), Pin 1 (OUTPUT HIGH)");
-  DEBUG_PRINT("Button press connects Pin 0 to Pin 1 (3.3V)");
+  // Configure button pin with internal pullup (simpler hardware!)
+  // Pin 0: Connected to button, other side to GND
+  // When button pressed: Pin 0 pulled LOW (to GND)
+  // When button released: Pin 0 pulled HIGH (internal pullup)
+  pinMode(BUTTON_PIN_A, INPUT_PULLUP);  // Internal pullup resistor
+  DEBUG_PRINT("Button configured: Pin 0 (INPUT_PULLUP), button to GND");
+  DEBUG_PRINT("Button press pulls Pin 0 LOW");
 
   // Configure buzzer pins (OFF initially)
   pinMode(BUZZER_PIN_POSITIVE, OUTPUT);
