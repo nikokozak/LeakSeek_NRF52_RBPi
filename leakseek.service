@@ -1,0 +1,18 @@
+[Unit]
+Description=LeakSeek BLE Central Server
+After=network.target bluetooth.target
+
+[Service]
+Type=simple
+User=niko
+SupplementaryGroups=gpio spi i2c
+WorkingDirectory=/home/niko/LeakSeek_NRF52_RBPi/server
+Environment="PATH=/home/niko/LeakSeek_NRF52_RBPi/server/venv/bin"
+ExecStartPre=+/usr/sbin/rfkill unblock bluetooth
+ExecStartPre=+/bin/sleep 5
+ExecStart=/home/niko/LeakSeek_NRF52_RBPi/server/venv/bin/uvicorn central:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
