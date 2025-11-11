@@ -81,13 +81,13 @@
 
 // ADAPTIVE THRESHOLD APPROACH - uses percentage-based detection
 // Instead of fixed threshold, we detect water as a dramatic DROP from baseline
-#define RC_WATER_DROP_PERCENTAGE 80      // Water must reduce RC time by 80% from baseline
-                                         // Example: If baseline is 50ms, water is < 10ms (50% of 50ms = 10ms)
-                                         // This adapts to environmental drift automatically!
+#define RC_WATER_DROP_PERCENTAGE 50      // Water must reduce RC time by 50% from baseline
+                                         // Example: If baseline is 50ms, water is < 25ms
+                                         // Adjusted for ITO traces with direct pin connection
 
-#define RC_ABSOLUTE_MIN_THRESHOLD_US 10000   // Absolute minimum "wet" threshold (10ms)
-                                             // Even if percentage logic fails, anything <10ms is definitely wet
-                                             // Actual water is typically 0.5-5ms, so 10ms is very safe
+#define RC_ABSOLUTE_MIN_THRESHOLD_US 30000   // Absolute minimum "wet" threshold (30ms)
+                                             // Set higher to catch water with moderate conductivity
+                                             // Direct pin connection (no series resistor)
 
 #define RC_ABSOLUTE_MAX_DRY_US 150000    // Absolute maximum expected "dry" time (150ms)
                                          // Used to validate baseline and reject bad readings
