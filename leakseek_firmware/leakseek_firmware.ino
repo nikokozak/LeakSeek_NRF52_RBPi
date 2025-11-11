@@ -106,20 +106,20 @@ unsigned long measure_rc_time() {
   digitalWrite(WATER_SENSE_PIN_A, HIGH);
   unsigned long start = micros();
 
-  // Optimized timeout loop - reduced from 200ms to 100ms
-  // This is still 2x the expected dry time (~50ms max for normal operation)
+  // Timeout loop - allow up to 200ms for high-resistance dry traces
+  // With 330k + 1M traces and 100nF cap, RC time can be ~133ms
   while (digitalRead(WATER_SENSE_PIN_B) == LOW) {
     unsigned long elapsed = micros() - start;
 
-    // Timeout after 100ms - much faster recovery from bad connections
-    if (elapsed > 100000) {
+    // Timeout after 200ms - allows for high-resistance dry traces
+    if (elapsed > 200000) {
       digitalWrite(WATER_SENSE_PIN_A, LOW);
       static unsigned long last_timeout = 0;
       if (millis() - last_timeout > 1000) {  // Limit debug spam
-        DEBUG_PRINT("WARNING: RC timeout (>100ms)");
+        DEBUG_PRINT("WARNING: RC timeout (>200ms)");
         last_timeout = millis();
       }
-      return 100000;  // Return timeout value
+      return 200000;  // Return timeout value
     }
   }
 
@@ -241,20 +241,28 @@ bool check_water_detected() {
   //   - Reading is valid (not timeout/disconnected)
   //   - It's been at least 10 seconds since last update
   //   - Reading is within reasonable dry range
+  //   - Baseline hasn't been corrupted
   if (!water_detected && !water_now &&
       (millis() - baseline_update_time > 10000) &&
       avg_time_us > RC_ABSOLUTE_MIN_THRESHOLD_US &&
-      avg_time_us < RC_ABSOLUTE_MAX_DRY_US) {
+      avg_time_us < 150000 &&  // Reject timeout values (100-200ms)
+      rc_baseline_us < 150000 && // Prevent using corrupted baseline
+      baseline_established) {  // Only adapt after initial learning
 
     // Slow adaptation: move baseline 10% toward current reading
     // This allows it to track slow environmental drift without reacting to noise
-    unsigned long delta = (avg_time_us > rc_baseline_us) ?
-                          (avg_time_us - rc_baseline_us) : (rc_baseline_us - avg_time_us);
+    long delta = (long)avg_time_us - (long)rc_baseline_us;
 
-    if (delta > 2000) {  // Only adapt if drift is >2ms
-      rc_baseline_us = rc_baseline_us + ((avg_time_us - rc_baseline_us) / 10);
-      baseline_update_time = millis();
-      DEBUG_PRINT("Baseline adapted to: " + String(rc_baseline_us) + " us (drift detected)");
+    if (abs(delta) > 2000) {  // Only adapt if drift is >2ms
+      // Use signed math to prevent unsigned underflow
+      long new_baseline = (long)rc_baseline_us + (delta / 10);
+
+      // Bounds check to prevent corruption
+      if (new_baseline > 10000 && new_baseline < 150000) {
+        rc_baseline_us = (unsigned long)new_baseline;
+        baseline_update_time = millis();
+        DEBUG_PRINT("Baseline adapted to: " + String(rc_baseline_us) + " us (drift detected)");
+      }
     }
   }
 

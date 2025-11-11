@@ -89,9 +89,9 @@
                                              // Even if percentage logic fails, anything <10ms is definitely wet
                                              // Actual water is typically 0.5-5ms, so 10ms is very safe
 
-#define RC_ABSOLUTE_MAX_DRY_US 60000     // Absolute maximum expected "dry" time (60ms)
+#define RC_ABSOLUTE_MAX_DRY_US 150000    // Absolute maximum expected "dry" time (150ms)
                                          // Used to validate baseline and reject bad readings
-                                         // Normal dry range: 50-500ms, but we expect <60ms in practice
+                                         // With 330k + high-resistance traces, can be up to 133ms
 
 #define RC_SAMPLE_COUNT 10               // Increased from 5 to 10 for better noise rejection
                                          // 10 samples at 100ms = 1 second of averaging
