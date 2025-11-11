@@ -334,6 +334,15 @@ void check_button() {
       button_pressed = false;  // Reset button state
     }
   }
+
+  // Check for 2-second hold in STOPPED state to trigger reboot
+  if (button_pressed && system_state == STATE_STOPPED) {
+    if (millis() - button_press_start >= 2000) {  // 2 seconds
+      DEBUG_PRINT("BUTTON HELD FOR 2 SECONDS - REBOOTING!");
+      delay(100);  // Brief delay to let serial print
+      NVIC_SystemReset();  // Software reset (ARM Cortex-M4 standard)
+    }
+  }
 }
 
 // ============================================
@@ -412,7 +421,7 @@ void set_system_state(uint8_t new_state) {
       digitalWrite(BUZZER_PIN_POSITIVE, LOW);
       digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
       DEBUG_PRINT("Entered STOPPED mode - alert acknowledged");
-      DEBUG_PRINT("Dry sensor and reboot to reset");
+      DEBUG_PRINT("Dry sensor, then hold button 2s to reboot");
       break;
   }
 }
