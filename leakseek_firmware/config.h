@@ -64,7 +64,7 @@
 #define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
 #define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023)
 #define WATER_SAMPLE_COUNT 30            // Number of samples to average for stability
-#define WATER_DETECTION_DEBOUNCE_MS 200  // Debounce time before confirming water
+#define WATER_DETECTION_DEBOUNCE_MS 500  // Debounce time before confirming water (increased from 200ms)
 
 // Water detection logic mode
 // false = Normal (water DECREASES reading, trigger when reading < threshold)
@@ -79,15 +79,27 @@
 // Dry: High resistance (>1MΩ) → Slow charge → Long time (50-500ms)
 // Wet: Low resistance (<100kΩ) → Fast charge → Short time (0.5-5ms)
 
-#define RC_TIME_THRESHOLD_US 20000       // RC time threshold in microseconds (20ms = 20000us)
-                                         // Times < threshold = WET (fast charge)
-                                         // Times > threshold = DRY (slow charge)
-                                         // Recommended: 15000-25000 us (15-25ms)
+// ADAPTIVE THRESHOLD APPROACH - uses percentage-based detection
+// Instead of fixed threshold, we detect water as a dramatic DROP from baseline
+#define RC_WATER_DROP_PERCENTAGE 80      // Water must reduce RC time by 80% from baseline
+                                         // Example: If baseline is 50ms, water is < 10ms (50% of 50ms = 10ms)
+                                         // This adapts to environmental drift automatically!
 
-#define RC_SAMPLE_COUNT 5                // Number of RC timing samples to average
+#define RC_ABSOLUTE_MIN_THRESHOLD_US 10000   // Absolute minimum "wet" threshold (10ms)
+                                             // Even if percentage logic fails, anything <10ms is definitely wet
+                                             // Actual water is typically 0.5-5ms, so 10ms is very safe
+
+#define RC_ABSOLUTE_MAX_DRY_US 60000     // Absolute maximum expected "dry" time (60ms)
+                                         // Used to validate baseline and reject bad readings
+                                         // Normal dry range: 50-500ms, but we expect <60ms in practice
+
+#define RC_SAMPLE_COUNT 10               // Increased from 5 to 10 for better noise rejection
+                                         // 10 samples at 100ms = 1 second of averaging
                                          // Higher = more stable, slower response
-                                         // Lower = faster response, more noise
-                                         // Recommended: 3-10
+                                         // Recommended: 10-20
+
+#define RC_BASELINE_SAMPLES 20           // Number of initial samples to establish baseline
+                                         // First 20 readings (2 seconds) are used to learn "dry" state
 
 #define RC_DETECTION_INVERTED false      // Set true if water INCREASES charge time
                                          // (unusual, but possible with some circuits)
@@ -101,10 +113,11 @@
 // ============================================
 // Buzzer Configuration
 // ============================================
-#define BUZZER_BEEP_DURATION_MS 100      // Each beep lasts 100ms
-#define BUZZER_BEEP_PAUSE_MS 100         // Pause between beeps in a sequence
-#define BUZZER_BEEPS_PER_SEQUENCE 3      // 3 beeps per sequence
-#define BUZZER_SEQUENCE_PAUSE_MS 1000    // Pause between sequences
+// Changed to single loud beep pattern for better audibility
+#define BUZZER_BEEP_DURATION_MS 200      // Each beep lasts 200ms (longer = louder)
+#define BUZZER_BEEP_PAUSE_MS 1800        // Pause between beeps (200ms beep + 1800ms pause = 2 second cycle)
+#define BUZZER_BEEPS_PER_SEQUENCE 1      // 1 beep per sequence (loud and simple)
+#define BUZZER_SEQUENCE_PAUSE_MS 0       // No extra pause needed with single beep pattern
 
 // Square wave generation for piezo buzzers
 #define BUZZER_FREQUENCY_HZ 4000         // 4kHz - resonant frequency for this piezo buzzer

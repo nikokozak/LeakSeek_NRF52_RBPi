@@ -28,19 +28,20 @@ int rc_history_index = 0;
 bool water_detected = false;
 unsigned long water_detect_time = 0;
 
+// Adaptive baseline tracking
+unsigned long rc_baseline_us = 50000;  // Learned baseline (default 50ms)
+int baseline_sample_count = 0;         // How many samples collected for baseline
+bool baseline_established = false;     // Has baseline been learned?
+unsigned long baseline_update_time = 0; // Last time we updated baseline
+
 // Button state
 bool button_pressed = false;
 unsigned long button_press_start = 0;
 bool button_debounce_flag = false;
 unsigned long button_debounce_time = 0;
 
-// Buzzer state
+// Buzzer state (simplified for blocking beep pattern)
 unsigned long buzzer_last_beep = 0;
-int buzzer_beep_count = 0;
-bool buzzer_on = false;
-unsigned long buzzer_sequence_start = 0;
-bool buzzer_polarity = false;  // For square wave generation
-unsigned long buzzer_last_toggle = 0;
 
 // System state machine
 uint8_t system_state = STATE_NORMAL;
@@ -175,23 +176,87 @@ unsigned long read_water_sensor() {
 }
 
 // ============================================
-// Water Detection Logic
+// Water Detection Logic - ADAPTIVE BASELINE
 // ============================================
 bool check_water_detected() {
   unsigned long avg_time_us = read_water_sensor();
   rc_time_us = avg_time_us;  // Store for debug output
 
-  // Determine if water detected based on RC time threshold
-  // RC_TIME_THRESHOLD_US is in microseconds (default: 20000 = 20ms)
+  // Step 1: Establish baseline during first RC_BASELINE_SAMPLES readings
+  if (!baseline_established && baseline_sample_count < RC_BASELINE_SAMPLES) {
+    // Reject obviously bad readings during baseline learning
+    if (avg_time_us > 80000 || avg_time_us < 1000) {
+      DEBUG_PRINT("Skipping bad reading during baseline: " + String(avg_time_us) + " us");
+      return false;  // Don't count this sample
+    }
+
+    // Accumulate baseline average
+    if (baseline_sample_count == 0) {
+      rc_baseline_us = avg_time_us;  // First sample
+    } else {
+      // Running average: new_avg = old_avg + (new_value - old_avg) / count
+      rc_baseline_us = rc_baseline_us + (avg_time_us - rc_baseline_us) / (baseline_sample_count + 1);
+    }
+    baseline_sample_count++;
+
+    DEBUG_PRINT("Baseline learning: sample " + String(baseline_sample_count) +
+                ", current avg: " + String(rc_baseline_us) + " us");
+
+    if (baseline_sample_count >= RC_BASELINE_SAMPLES) {
+      baseline_established = true;
+      baseline_update_time = millis();
+      DEBUG_PRINT("*** BASELINE ESTABLISHED: " + String(rc_baseline_us) + " us ***");
+    }
+
+    return false;  // No alerts during baseline learning
+  }
+
+  // Step 2: Adaptive threshold based on percentage drop from baseline
+  // Calculate dynamic threshold: baseline * (100 - DROP_PERCENTAGE) / 100
+  // Example: If baseline=50ms and drop=80%, threshold = 50 * 20/100 = 10ms
+  unsigned long dynamic_threshold = (rc_baseline_us * (100 - RC_WATER_DROP_PERCENTAGE)) / 100;
+
+  // Clamp to absolute minimum (safety: anything <10ms is definitely wet)
+  if (dynamic_threshold < RC_ABSOLUTE_MIN_THRESHOLD_US) {
+    dynamic_threshold = RC_ABSOLUTE_MIN_THRESHOLD_US;
+  }
+
+  // Step 3: Determine if water detected using dynamic OR absolute threshold
   bool water_now;
 
   #if RC_DETECTION_INVERTED
-    // Inverted: water INCREASES charge time (unusual, but configurable)
-    water_now = (avg_time_us > RC_TIME_THRESHOLD_US);
+    // Inverted mode (unusual): water INCREASES charge time
+    water_now = (avg_time_us > dynamic_threshold) || (avg_time_us > RC_ABSOLUTE_MIN_THRESHOLD_US);
   #else
-    // Normal: water DECREASES charge time (low resistance = fast charge)
-    water_now = (avg_time_us < RC_TIME_THRESHOLD_US);
+    // Normal mode: water DECREASES charge time
+    // Water detected if EITHER:
+    //   1. Reading drops below dynamic threshold (percentage-based), OR
+    //   2. Reading is absolutely below 10ms (safety catch)
+    water_now = (avg_time_us < dynamic_threshold) || (avg_time_us < RC_ABSOLUTE_MIN_THRESHOLD_US);
   #endif
+
+  // Step 4: Slow baseline adaptation when DRY (prevents drift-induced false alarms)
+  // Only update baseline if:
+  //   - Currently in DRY state (not alerting)
+  //   - Reading is valid (not timeout/disconnected)
+  //   - It's been at least 10 seconds since last update
+  //   - Reading is within reasonable dry range
+  if (!water_detected && !water_now &&
+      (millis() - baseline_update_time > 10000) &&
+      avg_time_us > RC_ABSOLUTE_MIN_THRESHOLD_US &&
+      avg_time_us < RC_ABSOLUTE_MAX_DRY_US) {
+
+    // Slow adaptation: move baseline 10% toward current reading
+    // This allows it to track slow environmental drift without reacting to noise
+    unsigned long delta = (avg_time_us > rc_baseline_us) ?
+                          (avg_time_us - rc_baseline_us) : (rc_baseline_us - avg_time_us);
+
+    if (delta > 2000) {  // Only adapt if drift is >2ms
+      rc_baseline_us = rc_baseline_us + ((avg_time_us - rc_baseline_us) / 10);
+      baseline_update_time = millis();
+      DEBUG_PRINT("Baseline adapted to: " + String(rc_baseline_us) + " us (drift detected)");
+    }
+  }
 
   // Debouncing logic
   if (water_now && !water_detected) {
@@ -229,7 +294,7 @@ bool check_water_detected() {
 // Button Handling
 // ============================================
 void check_button() {
-  bool button_state = (digitalRead(BUTTON_PIN_A) == LOW);  // Active low (pullup)
+  bool button_state = (digitalRead(BUTTON_PIN_A) == HIGH);  // Active high (Pin 1 is OUTPUT HIGH)
 
   // Debounce
   if (button_state != button_pressed) {
@@ -263,74 +328,43 @@ void check_button() {
 }
 
 // ============================================
-// Buzzer Control
+// Buzzer Control - Simplified Blocking Pattern
 // ============================================
 void update_buzzer() {
   if (system_state != STATE_ALERT) {
     // Turn off buzzer if not in alert mode
-    if (buzzer_on) {
-      digitalWrite(BUZZER_PIN_POSITIVE, LOW);
-      digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-      buzzer_on = false;
-    }
+    digitalWrite(BUZZER_PIN_POSITIVE, LOW);
+    digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
     return;
   }
 
-  // Alert mode - 3 beeps pattern: beep-beep-beep, pause, repeat
-  // Total cycle: 1500ms (100 beep, 100 pause, 100 beep, 100 pause, 100 beep, 1000 pause)
-  unsigned long time_in_sequence = millis() - buzzer_sequence_start;
-  int cycle_position = time_in_sequence % 1500;
+  // Alert mode - single loud beep every 2 seconds
+  // Uses blocking square wave generation (same as startup beep) for maximum volume
+  unsigned long now = millis();
 
-  // Determine if buzzer should be on based on position in cycle
-  bool should_beep = false;
+  if (now - buzzer_last_beep >= (BUZZER_BEEP_DURATION_MS + BUZZER_BEEP_PAUSE_MS)) {
+    // Time for a beep!
+    buzzer_last_beep = now;
 
-  if (cycle_position < BUZZER_BEEP_DURATION_MS) {
-    // Beep 1
-    should_beep = true;
-  } else if (cycle_position >= (BUZZER_BEEP_DURATION_MS + BUZZER_BEEP_PAUSE_MS) &&
-             cycle_position < (BUZZER_BEEP_DURATION_MS * 2 + BUZZER_BEEP_PAUSE_MS)) {
-    // Beep 2
-    should_beep = true;
-  } else if (cycle_position >= (BUZZER_BEEP_DURATION_MS * 2 + BUZZER_BEEP_PAUSE_MS * 2) &&
-             cycle_position < (BUZZER_BEEP_DURATION_MS * 3 + BUZZER_BEEP_PAUSE_MS * 2)) {
-    // Beep 3
-    should_beep = true;
-  }
+    // Generate blocking square wave at 4kHz for BUZZER_BEEP_DURATION_MS
+    // At 4kHz, each cycle is 250us (125us high, 125us low)
+    // For 200ms beep: 200,000us / 250us = 800 cycles
+    int cycles = (BUZZER_BEEP_DURATION_MS * 1000) / 250;
 
-  // Update buzzer state (on/off envelope)
-  if (should_beep && !buzzer_on) {
-    buzzer_on = true;
-    buzzer_last_toggle = micros();
-  } else if (!should_beep && buzzer_on) {
+    for (int i = 0; i < cycles; i++) {
+      digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
+      digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
+      delayMicroseconds(125);  // 4kHz half-period
+      digitalWrite(BUZZER_PIN_POSITIVE, LOW);
+      digitalWrite(BUZZER_PIN_NEGATIVE, HIGH);
+      delayMicroseconds(125);
+    }
+
     // Turn off completely
     digitalWrite(BUZZER_PIN_POSITIVE, LOW);
     digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-    buzzer_on = false;
-  }
 
-  // Generate square wave at BUZZER_FREQUENCY_HZ when buzzer is on
-  // Generate multiple toggles per call to maintain proper frequency
-  if (buzzer_on) {
-    unsigned long now = micros();
-
-    // Catch up on any missed toggles (tight loop to maintain frequency)
-    while (now - buzzer_last_toggle >= BUZZER_TOGGLE_INTERVAL_US) {
-      buzzer_polarity = !buzzer_polarity;
-      buzzer_last_toggle += BUZZER_TOGGLE_INTERVAL_US;
-
-      if (buzzer_polarity) {
-        // Positive half-cycle
-        digitalWrite(BUZZER_PIN_POSITIVE, HIGH);
-        digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-      } else {
-        // Negative half-cycle
-        digitalWrite(BUZZER_PIN_POSITIVE, LOW);
-        digitalWrite(BUZZER_PIN_NEGATIVE, HIGH);
-      }
-
-      // Safety: don't loop forever if time gets way out of sync
-      if (micros() - now > 10000) break;  // Max 10ms of catch-up
-    }
+    DEBUG_PRINT("BEEP!");
   }
 }
 
@@ -350,7 +384,6 @@ void set_system_state(uint8_t new_state) {
       set_advertising_mode(ADV_MODE_NORMAL);
       digitalWrite(BUZZER_PIN_POSITIVE, LOW);
       digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-      buzzer_on = false;
       DEBUG_PRINT("Entered NORMAL mode - monitoring for water");
       break;
 
@@ -359,7 +392,7 @@ void set_system_state(uint8_t new_state) {
       current_flags = 0x03;  // leak=1, needs_ack=1
       set_advertising_mode(ADV_MODE_ALERT);
       alert_start_time = millis();
-      buzzer_sequence_start = millis();
+      buzzer_last_beep = millis() - (BUZZER_BEEP_DURATION_MS + BUZZER_BEEP_PAUSE_MS);  // Beep immediately
       DEBUG_PRINT("!!! WATER DETECTED !!!");
       DEBUG_PRINT("Entered ALERT mode - sequence " + String(current_seq));
       break;
@@ -369,7 +402,6 @@ void set_system_state(uint8_t new_state) {
       set_advertising_mode(ADV_MODE_NORMAL);
       digitalWrite(BUZZER_PIN_POSITIVE, LOW);
       digitalWrite(BUZZER_PIN_NEGATIVE, LOW);
-      buzzer_on = false;
       DEBUG_PRINT("Entered STOPPED mode - alert acknowledged");
       DEBUG_PRINT("Dry sensor and reboot to reset");
       break;
@@ -488,16 +520,23 @@ void ack_write_callback(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data
 // ============================================
 void print_water_debug() {
   #if DEBUG_MODE == 1
-    // Text debug mode
-    String status = (rc_time_us < RC_TIME_THRESHOLD_US) ? "WET" : "DRY";
+    // Text debug mode with adaptive threshold info
+    unsigned long dynamic_threshold = (rc_baseline_us * (100 - RC_WATER_DROP_PERCENTAGE)) / 100;
+    if (dynamic_threshold < RC_ABSOLUTE_MIN_THRESHOLD_US) {
+      dynamic_threshold = RC_ABSOLUTE_MIN_THRESHOLD_US;
+    }
+
+    String status = (rc_time_us < dynamic_threshold) ? "WET" : "DRY";
     String state_name = (system_state == STATE_NORMAL) ? "NORMAL" :
                        (system_state == STATE_ALERT) ? "ALERT" : "STOPPED";
 
-    Serial.print("RC Time: ");
+    Serial.print("RC: ");
     Serial.print(rc_time_us);
-    Serial.print(" us | Threshold: ");
-    Serial.print(RC_TIME_THRESHOLD_US);
-    Serial.print(" us | Status: ");
+    Serial.print("us | Baseline: ");
+    Serial.print(rc_baseline_us);
+    Serial.print("us | Threshold: ");
+    Serial.print(dynamic_threshold);
+    Serial.print("us | Status: ");
     Serial.print(status);
     Serial.print(" | State: ");
     Serial.println(state_name);
@@ -509,10 +548,17 @@ void print_graph_debug() {
     // Graph debug mode for Serial Plotter
     unsigned long current_time = measure_rc_time();
 
+    // Calculate dynamic threshold
+    unsigned long dynamic_threshold = (rc_baseline_us * (100 - RC_WATER_DROP_PERCENTAGE)) / 100;
+    if (dynamic_threshold < RC_ABSOLUTE_MIN_THRESHOLD_US) {
+      dynamic_threshold = RC_ABSOLUTE_MIN_THRESHOLD_US;
+    }
+
     // Convert to milliseconds for easier reading (divide by 1000)
     float current_ms = current_time / 1000.0;
     float avg_ms = rc_time_us / 1000.0;
-    float threshold_ms = RC_TIME_THRESHOLD_US / 1000.0;
+    float threshold_ms = dynamic_threshold / 1000.0;
+    float baseline_ms = rc_baseline_us / 1000.0;
 
     // State value for visualization (scaled to fit nicely on graph)
     int state_value = 0;
@@ -525,14 +571,16 @@ void print_graph_debug() {
     Serial.print(current_ms, 2);
     Serial.print(" Avg:");
     Serial.print(avg_ms, 2);
+    Serial.print(" Baseline:");
+    Serial.print(baseline_ms, 2);
     Serial.print(" Threshold:");
     Serial.print(threshold_ms, 2);
     Serial.print(" State:");
     Serial.print(state_value);
-    Serial.print(" Upper:");
-    Serial.print(threshold_ms + 10, 2);
-    Serial.print(" Lower:");
-    Serial.println(threshold_ms - 10, 2);
+    Serial.print(" AbsMin:");
+    Serial.print(RC_ABSOLUTE_MIN_THRESHOLD_US / 1000.0, 2);
+    Serial.print(" AbsMax:");
+    Serial.println(RC_ABSOLUTE_MAX_DRY_US / 1000.0, 2);
   #endif
 }
 
@@ -594,21 +642,24 @@ void setup() {
   DEBUG_PRINT("Pin 8 set to high-impedance input (pulldown would prevent charging!)");
   DEBUG_PRINT("Expected dry time: 50-500ms, wet time: 0.5-5ms");
 
-  // Initialize RC timing history buffer with high values (dry state)
+  // Initialize RC timing history buffer with reasonable dry values
   // This prevents false water detection during initial readings
   for (int i = 0; i < RC_SAMPLE_COUNT; i++) {
-    rc_time_history[i] = RC_TIME_THRESHOLD_US * 2;  // Initialize to 2x threshold (safely dry)
+    rc_time_history[i] = 50000;  // Initialize to 50ms (typical dry state)
   }
-  DEBUG_PRINT("RC timing history buffer initialized to dry state");
+  DEBUG_PRINT("RC timing history buffer initialized to 50ms (dry state)");
+  DEBUG_PRINT("Baseline learning will begin - please keep sensor DRY for 2 seconds!");
 
-  // Configure button pins
-  // IMPORTANT: Pin 1 should NOT be used as OUTPUT LOW (fake ground)
-  // This causes ground bounce that interferes with RC timing circuit!
-  // Instead, button should connect pin 0 to real GND
-  pinMode(BUTTON_PIN_A, INPUT_PULLUP);
-  pinMode(BUTTON_PIN_B, INPUT);  // Set as high-impedance input (not OUTPUT LOW)
-  DEBUG_PRINT("Button configured on pin 0 (connect to real GND, not pin 1)");
-  DEBUG_PRINT("WARNING: If button uses pin 1, connect it to GND pad instead");
+  // Configure button pins for hardware setup:
+  // Pin 0: Connected to button A, has 10Ω resistor to GND
+  // Pin 1: Connected to button B, acts as voltage source (OUTPUT HIGH)
+  // When button pressed: Pin 0 pulled HIGH through button from Pin 1
+  // When button released: Pin 0 pulled LOW through 10Ω to GND
+  pinMode(BUTTON_PIN_A, INPUT);  // No pullup - external 10Ω to GND
+  pinMode(BUTTON_PIN_B, OUTPUT);
+  digitalWrite(BUTTON_PIN_B, HIGH);  // Pin 1 acts as 3.3V source
+  DEBUG_PRINT("Button configured: Pin 0 (INPUT with 10Ω to GND), Pin 1 (OUTPUT HIGH)");
+  DEBUG_PRINT("Button press connects Pin 0 to Pin 1 (3.3V)");
 
   // Configure buzzer pins (OFF initially)
   pinMode(BUZZER_PIN_POSITIVE, OUTPUT);
@@ -650,8 +701,10 @@ void setup() {
     DEBUG_PRINT("Hardware watchdog enabled (4s timeout)");
   #endif
 
-  DEBUG_PRINT("\nInitialization complete - monitoring for water");
-  DEBUG_PRINT("RC Time Threshold: " + String(RC_TIME_THRESHOLD_US) + " us (" + String(RC_TIME_THRESHOLD_US / 1000.0) + " ms)");
+  DEBUG_PRINT("\nInitialization complete - starting baseline learning");
+  DEBUG_PRINT("Adaptive threshold: " + String(RC_WATER_DROP_PERCENTAGE) + "% drop from baseline");
+  DEBUG_PRINT("Absolute minimum threshold: " + String(RC_ABSOLUTE_MIN_THRESHOLD_US) + " us (" + String(RC_ABSOLUTE_MIN_THRESHOLD_US / 1000.0) + " ms)");
+  DEBUG_PRINT("Keep sensor DRY for next 2 seconds to establish baseline!");
   DEBUG_PRINT("========================================\n");
 
   digitalWrite(LED_BUILTIN, LOW);
