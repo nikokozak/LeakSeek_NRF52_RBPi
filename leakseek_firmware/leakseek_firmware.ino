@@ -139,16 +139,16 @@ unsigned long read_water_sensor() {
   unsigned long current_time = measure_rc_time();
 
   // Reject obviously bad readings (disconnected sensor or timeout)
-  // Values >80ms indicate disconnected or extremely poor connection
-  // (Normal dry is ~50ms, so 80ms is well above normal but below timeout)
-  if (current_time > 80000) {
+  // Values >150ms indicate disconnected or timeout
+  // With 100nF cap and high-resistance traces, dry can be 45-150ms
+  if (current_time > RC_ABSOLUTE_MAX_DRY_US) {
     // Don't update history buffer with bad reading
     // Return last good average or a high value if no good history
     unsigned long sum = 0;
     int valid_count = 0;
 
     for (int i = 0; i < RC_SAMPLE_COUNT; i++) {
-      if (rc_time_history[i] < 80000) {
+      if (rc_time_history[i] < RC_ABSOLUTE_MAX_DRY_US) {
         sum += rc_time_history[i];
         valid_count++;
       }
@@ -157,7 +157,7 @@ unsigned long read_water_sensor() {
     if (valid_count > 0) {
       return sum / valid_count;  // Average of valid samples
     } else {
-      return 80000;  // All samples bad, return high value
+      return RC_ABSOLUTE_MAX_DRY_US;  // All samples bad, return max dry value
     }
   }
 
@@ -185,7 +185,8 @@ bool check_water_detected() {
   // Step 1: Establish baseline during first RC_BASELINE_SAMPLES readings
   if (!baseline_established && baseline_sample_count < RC_BASELINE_SAMPLES) {
     // Reject obviously bad readings during baseline learning
-    if (avg_time_us > 80000 || avg_time_us < 1000) {
+    // Accept readings up to RC_ABSOLUTE_MAX_DRY_US (150ms with 100nF cap)
+    if (avg_time_us > RC_ABSOLUTE_MAX_DRY_US || avg_time_us < 1000) {
       DEBUG_PRINT("Skipping bad reading during baseline: " + String(avg_time_us) + " us");
       return false;  // Don't count this sample
     }
