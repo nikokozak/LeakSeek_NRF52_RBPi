@@ -1,40 +1,44 @@
-// Define Manufacturer ID - there's an assigned-numbers list here:
+// LeakSeek Firmware Configuration
+// ============================================
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// ============================================
+// Manufacturer ID for BLE Advertising
+// ============================================
 // https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers
-// 0x0059 is Nordic
-// 0x018B is Konica Minolta, Inc. (This is what we're using)
+// 0x018B is Konica Minolta, Inc. (placeholder - not officially assigned to us)
 #define MANUFACTURER_ID 0x018B
 
 // ============================================
-// XIAO nRF52 Custom PCB Pin Assignments
+// XIAO nRF52 Pin Assignments
 // ============================================
 
-// Water sensor: ITO two-trace interlinked-finger sensor
-// RC timing firmware uses digital pins 7 & 8
+// Water sensor: Analog voltage divider with ITO traces
+// D5 drives 100k pull-up, A0 reads voltage divider
+#define SENSOR_POWER_PIN 5     // GPIO output to drive pull-up resistor
+#define SENSOR_READ_PIN A0     // Analog input for voltage divider
 
-// Pin assignments for RC timing firmware (current hardware)
-#define WATER_SENSE_PIN_A 7    // Digital output for RC timing
-#define WATER_SENSE_PIN_B 8    // Digital input with 100nF cap to GND
+// Button for user interaction (INPUT_PULLUP, button to GND)
+// Quick press: beep, 1s hold: stop alert, 2s hold: reboot
+#define BUTTON_PIN 3
 
-// Button for acknowledging alert (1-second hold to stop)
-#define BUTTON_PIN_A 0
-#define BUTTON_PIN_B 1
+// Buzzer (3.3V piezo) - push-pull drive with square wave
+#define BUZZER_PIN_POSITIVE 7
+#define BUZZER_PIN_NEGATIVE 9
 
-// Buzzer (3.3V) - direct drive
-#define BUZZER_PIN_POSITIVE 6
-#define BUZZER_PIN_NEGATIVE 4
+// ============================================
+// BLE Configuration
+// ============================================
 
-// Legacy definitions (kept for compatibility)
-#define BUTTON_PIN 2          // Not used on custom PCB
-#define LEAK_SENSOR_PIN 9     // Not used on custom PCB
-
-// #define UUID16_SVC_ALERT_NOTIFICATION                         0x1811, in BLEUuid.h
+// UUID16_SVC_ALERT_NOTIFICATION = 0x1811 (defined in BLEUuid.h)
 #define SERVICE_UUID UUID16_SVC_ALERT_NOTIFICATION
 
-// #define UUID16_CHR_ALERT_STATUS                               0x2A3F
+// UUID16_CHR_ALERT_STATUS = 0x2A3F
 #define CHARACTERISTIC_UUID UUID16_CHR_ALERT_STATUS
 
 // Custom ACK characteristic UUID for clearing alerts
-// Using a custom 128-bit UUID: 6e400002-b5a3-f393-e0a9-e50e24dcca9e
 #define ACK_CHARACTERISTIC_UUID "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 
 // Manufacturer data protocol version
@@ -45,110 +49,123 @@
 #define ADV_MODE_ALERT 1
 
 // Advertising intervals (in units of 0.625ms)
-// Normal mode: 1600 = 1000ms, Alert mode: 32 = 20ms
-#define ADV_INTERVAL_NORMAL 1600  // 1000ms between advertisements
-#define ADV_INTERVAL_ALERT_FAST 32  // 20ms (fast burst for first 5 seconds)
-#define ADV_INTERVAL_ALERT_SLOW 160  // 100ms (after initial burst)
-
-// Loop delay (how often we check the sensor)
-#define LOOP_DELAY_MS 100  // Check sensor every 100ms for quick response
+#define ADV_INTERVAL_NORMAL 1600      // 1000ms between advertisements
+#define ADV_INTERVAL_ALERT_FAST 32    // 20ms (fast burst for first 5 seconds)
+#define ADV_INTERVAL_ALERT_SLOW 160   // 100ms (after initial burst)
 
 // ============================================
-// Water Detection Configuration - ADC Method
+// Sensor Timing
 // ============================================
-// For leakseek_firmware_water_sensor.ino (requires analog pins A0/A1)
-// Water detection uses resistance measurement between ITO traces via ADC
-// Dry: High impedance (>1MΩ) → High ADC reading (700-1023)
-// Wet: Low impedance (<100kΩ) → Low ADC reading (0-500)
 
-#define WATER_DETECTION_ENABLED true    // Set false to use simulation mode
-#define WATER_THRESHOLD_DEFAULT 800      // ADC threshold (0-1023)
-#define WATER_SAMPLE_COUNT 30            // Number of samples to average for stability
-#define WATER_DETECTION_DEBOUNCE_MS 500  // Debounce time before confirming water (increased from 200ms)
-
-// Water detection logic mode
-// false = Normal (water DECREASES reading, trigger when reading < threshold)
-// true  = Inverted (water INCREASES reading, trigger when reading > threshold)
-#define WATER_DETECTION_INVERTED false   // Set true if wet readings are HIGHER than dry
+#define LOOP_DELAY_MS 100             // Check sensor every 100ms
+#define SETTLING_TIME_MS 50           // Wait for RC filter to settle (5τ for 99%)
 
 // ============================================
-// Water Detection Configuration - RC Timing Method
+// Calibration Configuration
 // ============================================
-// For leakseek_firmware_rc_timing.ino (works with digital pins 7/8!)
-// Uses RC time constant measurement with 100nF capacitor
-// Dry: High resistance (>1MΩ) → Slow charge → Long time (50-500ms)
-// Wet: Low resistance (<100kΩ) → Fast charge → Short time (0.5-5ms)
+// On startup, the sensor takes multiple readings to establish a baseline.
+// Thresholds are then calculated dynamically from this baseline.
 
-// ADAPTIVE THRESHOLD APPROACH - uses percentage-based detection
-// Instead of fixed threshold, we detect water as a dramatic DROP from baseline
-#define RC_WATER_DROP_PERCENTAGE 50      // Water must reduce RC time by 50% from baseline
-                                         // Example: If baseline is 50ms, water is < 25ms
-                                         // Adjusted for ITO traces with direct pin connection
+#define CALIBRATION_SAMPLES 10        // Number of readings to average
+#define CALIBRATION_DELAY_MS 100      // Delay between calibration readings
 
-#define RC_ABSOLUTE_MIN_THRESHOLD_US 30000   // Absolute minimum "wet" threshold (30ms)
-                                             // Set higher to catch water with moderate conductivity
-                                             // Direct pin connection (no series resistor)
+// Valid baseline range (10-bit ADC: 0-1023)
+// Dry sensor should read high (~950-1020)
+#define MIN_VALID_DRY_READING 800     // Below this = sensor shorted or wet at startup
+#define MAX_VALID_DRY_READING 1020    // Above this = sensor disconnected
 
-#define RC_ABSOLUTE_MAX_DRY_US 150000    // Absolute maximum expected "dry" time (150ms)
-                                         // Used to validate baseline and reject bad readings
-                                         // With 330k + high-resistance traces, can be up to 133ms
+// Maximum allowed variance during calibration (std dev threshold)
+#define MAX_CALIBRATION_VARIANCE 30   // If readings vary more than this, unstable
 
-#define RC_SAMPLE_COUNT 10               // Increased from 5 to 10 for better noise rejection
-                                         // 10 samples at 100ms = 1 second of averaging
-                                         // Higher = more stable, slower response
-                                         // Recommended: 10-20
+// ============================================
+// Dynamic Threshold Offsets
+// ============================================
+// Thresholds are calculated from calibrated baseline:
+//   threshold_wet = baseline - WET_OFFSET
+//   threshold_dry = baseline - DRY_OFFSET
+//
+// The gap between them creates hysteresis to prevent oscillation.
+// Example: baseline=1000 → wet<880, dry>950
 
-#define RC_BASELINE_SAMPLES 20           // Number of initial samples to establish baseline
-                                         // First 20 readings (2 seconds) are used to learn "dry" state
+#define WET_OFFSET 120                // How far below baseline triggers "wet"
+#define DRY_OFFSET 50                 // How far below baseline clears "wet"
 
-#define RC_DETECTION_INVERTED false      // Set true if water INCREASES charge time
-                                         // (unusual, but possible with some circuits)
+// Debounce: consecutive readings required to confirm state change
+#define WATER_DETECTION_DEBOUNCE_COUNT 3
 
 // ============================================
 // Button Configuration
 // ============================================
-#define BUTTON_HOLD_TIME_MS 1000         // 1 second hold to acknowledge alert
-#define BUTTON_DEBOUNCE_MS 50            // Debounce time for button press
+
+#define BUTTON_DEBOUNCE_MS 50         // Debounce time for button press
+#define BUTTON_QUICK_PRESS_MAX_MS 500 // Max duration for "quick press"
+#define BUTTON_STOP_HOLD_MS 1000      // 1 second hold to enter STOPPED state
+#define BUTTON_REBOOT_HOLD_MS 2000    // 2 second hold to reboot
 
 // ============================================
 // Buzzer Configuration
 // ============================================
-// Changed to single loud beep pattern for better audibility
-#define BUZZER_BEEP_DURATION_MS 200      // Each beep lasts 200ms (longer = louder)
-#define BUZZER_BEEP_PAUSE_MS 1800        // Pause between beeps (200ms beep + 1800ms pause = 2 second cycle)
-#define BUZZER_BEEPS_PER_SEQUENCE 1      // 1 beep per sequence (loud and simple)
-#define BUZZER_SEQUENCE_PAUSE_MS 0       // No extra pause needed with single beep pattern
 
-// Square wave generation for piezo buzzers
-#define BUZZER_FREQUENCY_HZ 4000         // 4kHz - resonant frequency for this piezo buzzer
-#define BUZZER_TOGGLE_INTERVAL_US (1000000 / (BUZZER_FREQUENCY_HZ * 2))  // Half-period in microseconds
+// Alert beep pattern (leak detected)
+#define BUZZER_BEEP_DURATION_MS 200   // Each beep lasts 200ms
+#define BUZZER_BEEP_PAUSE_MS 1800     // Pause between beeps (2 second cycle)
+
+// Square wave generation
+#define BUZZER_FREQUENCY_HZ 4000      // 4kHz - typical piezo resonant frequency
+
+// ============================================
+// Error Beep Patterns
+// ============================================
+// Used during calibration to indicate sensor status
+
+// Calibration OK: two short beeps
+#define BEEP_OK_COUNT 2
+#define BEEP_OK_DURATION_MS 100
+#define BEEP_OK_PAUSE_MS 100
+
+// Sensor error (shorted/wet at startup): rapid triple beep, repeated
+#define BEEP_ERROR_COUNT 3
+#define BEEP_ERROR_DURATION_MS 50
+#define BEEP_ERROR_PAUSE_MS 50
+#define BEEP_ERROR_REPEAT_INTERVAL_MS 1000
+
+// Sensor disconnected: long beep, repeated
+#define BEEP_DISCONNECTED_DURATION_MS 500
+#define BEEP_DISCONNECTED_PAUSE_MS 500
+
+// Unstable readings: alternating short-long pattern
+#define BEEP_UNSTABLE_SHORT_MS 50
+#define BEEP_UNSTABLE_LONG_MS 200
+#define BEEP_UNSTABLE_PAUSE_MS 100
 
 // ============================================
 // System States
 // ============================================
-#define STATE_NORMAL 0    // Normal monitoring mode
-#define STATE_ALERT 1     // Alert mode (leak detected, buzzing)
-#define STATE_STOPPED 2   // Stopped (acknowledged, waiting for reboot)
 
-// Simulation mode settings (for demo without real sensor - legacy)
-#define LEAK_CHANCE_PERCENT 5  // Percentage chance of leak per check (5 = 5%)
-#define INCIDENT_COOLDOWN_MS 15000  // Minimum 15 seconds between incidents
+#define STATE_NORMAL 0                // Normal monitoring mode
+#define STATE_ALERT 1                 // Alert mode (leak detected, buzzing)
+#define STATE_STOPPED 2               // Stopped (acknowledged, waiting for reboot)
+#define STATE_SENSOR_ERROR 3          // Sensor error detected during calibration
 
 // ============================================
 // Debug Configuration
 // ============================================
-// Set DEBUG_MODE to choose debug output style:
-// 0 = No debug output
+
+// Debug modes:
+// 0 = No debug output (production)
 // 1 = Text debug (detailed messages)
 // 2 = Graph debug (numeric values for Serial Plotter)
 #define DEBUG_MODE 1
 
-// Graph debug refresh rate (only used if DEBUG_MODE == 2)
-#define GRAPH_DEBUG_INTERVAL_MS 100  // Update graph every 100ms
+#define GRAPH_DEBUG_INTERVAL_MS 100   // Update graph every 100ms (mode 2 only)
 
 // Debug Macros
 #if DEBUG_MODE == 1
-  #define DEBUG_PRINT(...) if (Serial) { Serial.println(__VA_ARGS__); }
+  #define DEBUG_PRINT(x) if (Serial) { Serial.println(x); }
+  #define DEBUG_PRINTF(fmt, ...) if (Serial) { Serial.printf(fmt, ##__VA_ARGS__); }
 #else
-  #define DEBUG_PRINT(...) do {} while (0)
-#endif 
+  #define DEBUG_PRINT(x) do {} while (0)
+  #define DEBUG_PRINTF(fmt, ...) do {} while (0)
+#endif
+
+#endif // CONFIG_H
