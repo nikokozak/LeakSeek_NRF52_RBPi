@@ -236,10 +236,15 @@ void print_debug() {
 // ============================================
 void setup() {
   Serial.begin(115200);
-
   // Wait for serial (with timeout)
   unsigned long start = millis();
   while (!Serial && millis() - start < 2000) delay(10);
+
+  // Configure ADC (CRITICAL: Must match hardware config and test sketch)
+  // Use VDD (3.3V) reference for ratiometric readings with resistive sensor.
+  // Without this, Bluefruit lib forces 3.6V internal ref, causing reading errors.
+  analogReference(AR_VDD4);
+  analogReadResolution(10);
 
   DEBUG_PRINT("\n========================================");
   DEBUG_PRINT("LeakSeek v3.1 - Auto-Calibrating Sensor");

@@ -85,10 +85,13 @@
 //   threshold_dry = baseline - DRY_OFFSET
 //
 // The gap between them creates hysteresis to prevent oscillation.
-// Example: baseline=1000 → wet<880, dry>950
+// Example: baseline=929 → wet<899, dry>914
+//
+// NOTE: With 100k pull-up, water only drops ADC by ~40 counts.
+// Consider using 1M or 10M pull-up for better sensitivity.
 
-#define WET_OFFSET 120                // How far below baseline triggers "wet"
-#define DRY_OFFSET 50                 // How far below baseline clears "wet"
+#define WET_OFFSET 30                 // How far below baseline triggers "wet"
+#define DRY_OFFSET 15                 // How far below baseline clears "wet"
 
 // Debounce: consecutive readings required to confirm state change
 #define WATER_DETECTION_DEBOUNCE_COUNT 3
@@ -105,6 +108,9 @@
 // ============================================
 // Buzzer Configuration
 // ============================================
+
+// Set to true to mute all buzzer sounds (for debugging)
+#define BUZZER_MUTED true
 
 // Alert beep pattern (leak detected)
 #define BUZZER_BEEP_DURATION_MS 200   // Each beep lasts 200ms

@@ -76,6 +76,12 @@ void buzzer_init() {
 }
 
 void beep(int duration_ms) {
+#if BUZZER_MUTED
+  // Muted - just delay for the same duration
+  delay(duration_ms);
+  return;
+#endif
+
   // Generate blocking square wave at configured frequency
   int half_period_us = 1000000 / (BUZZER_FREQUENCY_HZ * 2);
   int cycles = (duration_ms * 1000) / (half_period_us * 2);
