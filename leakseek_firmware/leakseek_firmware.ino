@@ -41,7 +41,7 @@ BLEDis bledis;
 // ============================================
 // Global State
 // ============================================
-uint8_t system_state = STATE_NORMAL;
+uint8_t system_state = 255; // Initialize to invalid state to force first transition
 uint8_t current_seq = 0;
 uint8_t current_flags = 0;  // bit0=leak, bit1=needs_ack
 uint8_t battery_percent = 100;
@@ -66,9 +66,10 @@ void ack_write_callback(uint16_t conn_hdl, BLECharacteristic* chr, uint8_t* data
 // System State Management
 // ============================================
 void set_system_state(uint8_t new_state) {
+  DEBUG_PRINTF("set_system_state called: %d -> %d\n", system_state, new_state);
   if (new_state == system_state) return;
 
-  DEBUG_PRINTF("State: %d -> %d\n", system_state, new_state);
+  DEBUG_PRINTF("State changing: %d -> %d\n", system_state, new_state);
   system_state = new_state;
 
   switch (new_state) {
@@ -240,16 +241,17 @@ void setup() {
   unsigned long start = millis();
   while (!Serial && millis() - start < 2000) delay(10);
 
-  // Configure ADC (CRITICAL: Must match hardware config and test sketch)
-  // Use VDD (3.3V) reference for ratiometric readings with resistive sensor.
-  // Without this, Bluefruit lib forces 3.6V internal ref, causing reading errors.
-  analogReference(AR_VDD4);
-  analogReadResolution(10);
-
   DEBUG_PRINT("\n========================================");
   DEBUG_PRINT("LeakSeek v3.1 - Auto-Calibrating Sensor");
   DEBUG_PRINTF("Firmware: %s\n", FIRMWARE_VERSION);
   DEBUG_PRINT("========================================\n");
+
+  // 1. Configure ADC for Calibration (BLE is OFF)
+  // Use VDD (3.3V) reference for ratiometric readings.
+  DEBUG_PRINT("Configuring ADC for calibration...");
+  analogReference(AR_VDD4);
+  analogReadResolution(10);
+  DEBUG_PRINT("ADC configured (AR_VDD4, 10-bit)");
 
   // Initialize hardware
   pinMode(LED_BUILTIN, OUTPUT);
@@ -264,7 +266,7 @@ void setup() {
   button_init();
   DEBUG_PRINT("Button: D3 (INPUT_PULLUP)");
 
-  // Run calibration
+  // 2. Run Calibration (BLE is OFF, so no SoftDevice conflicts)
   DEBUG_PRINT("\n--- Starting Calibration ---");
   uint8_t cal_result = sensor_calibrate();
 
@@ -272,16 +274,28 @@ void setup() {
     DEBUG_PRINT("Calibration successful!");
     beep_ok();  // Two short beeps
 
-    // Initialize BLE
+    // 3. Initialize BLE (SoftDevice init might reset ADC)
+    DEBUG_PRINT("Initializing BLE stack...");
     ble_init();
+    DEBUG_PRINT("Setting ACK callback...");
     ack_characteristic.setWriteCallback(ack_write_callback);
+    
+    // 4. RESTORE ADC Configuration (Critical!)
+    // SoftDevice init often resets SAADC to internal 3.6V ref.
+    DEBUG_PRINT("Restoring ADC config after BLE init...");
+    analogReference(AR_VDD4);
+
+    DEBUG_PRINT("Starting System (Advertising)...");
     set_system_state(STATE_NORMAL);
   } else {
     DEBUG_PRINT("CALIBRATION FAILED!");
-
-    // Still initialize BLE so device is discoverable
+    
+    // Still init BLE for diagnostics
     ble_init();
     ack_characteristic.setWriteCallback(ack_write_callback);
+    
+    // Restore ADC here too just in case
+    analogReference(AR_VDD4);
 
     // Enter error state
     set_system_state(STATE_SENSOR_ERROR);

@@ -63,7 +63,14 @@ static uint8_t _current_seq = 0;
 static uint8_t _current_battery = 100;
 
 void ble_init() {
-  Bluefruit.begin();
+  DEBUG_PRINT("BLE: Initializing Bluefruit...");
+
+  if (!Bluefruit.begin()) {
+    DEBUG_PRINT("BLE: ERROR - Bluefruit.begin() failed!");
+    return;
+  }
+  DEBUG_PRINT("BLE: Bluefruit started OK");
+
   Bluefruit.setTxPower(0);
   Bluefruit.setName("LeakSeek");
 
@@ -94,7 +101,7 @@ void ble_init() {
   ack_characteristic.begin();
   ack_characteristic.write8(0);
 
-  DEBUG_PRINT("BLE initialized");
+  DEBUG_PRINT("BLE: All services initialized");
 }
 
 void ble_set_advertising(uint8_t mode, uint8_t flags, uint8_t seq, uint8_t battery) {
@@ -143,7 +150,10 @@ void ble_set_advertising(uint8_t mode, uint8_t flags, uint8_t seq, uint8_t batte
   }
 
   Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.start(0);
+
+  DEBUG_PRINT("BLE: Starting advertising...");
+  bool adv_started = Bluefruit.Advertising.start(0);
+  DEBUG_PRINTF("BLE: Advertising.start() returned: %d\n", adv_started);
 
   DEBUG_PRINTF("Advertising: %s (flags=0x%02X, seq=%d)\n",
                mode == ADV_MODE_ALERT ? "ALERT" : "NORMAL", flags, seq);

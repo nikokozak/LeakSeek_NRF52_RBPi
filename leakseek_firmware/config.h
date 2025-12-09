@@ -71,8 +71,8 @@
 
 // Valid baseline range (10-bit ADC: 0-1023)
 // Dry sensor should read high (~950-1020)
-#define MIN_VALID_DRY_READING 800     // Below this = sensor shorted or wet at startup
-#define MAX_VALID_DRY_READING 1020    // Above this = sensor disconnected
+#define MIN_VALID_DRY_READING 850     // Below this = sensor shorted or wet at startup
+#define MAX_VALID_DRY_READING 1040    // Above this = sensor disconnected
 
 // Maximum allowed variance during calibration (std dev threshold)
 #define MAX_CALIBRATION_VARIANCE 30   // If readings vary more than this, unstable

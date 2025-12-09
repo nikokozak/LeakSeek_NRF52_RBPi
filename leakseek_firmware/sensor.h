@@ -64,7 +64,7 @@ static int _debounce_counter = 0;
 void sensor_init() {
   pinMode(SENSOR_POWER_PIN, OUTPUT);
   digitalWrite(SENSOR_POWER_PIN, LOW);
-  analogReadResolution(10);  // 10-bit ADC (0-1023)
+  // Note: ADC resolution set in setup() after BLE init
 }
 
 int sensor_read() {
