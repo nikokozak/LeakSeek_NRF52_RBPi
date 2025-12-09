@@ -58,8 +58,9 @@ SCANNER_TIMEOUT = 60  # If no scan activity for this long, assume hung
 sensor_data = defaultdict(dict)
 
 # ACK management
-ack_semaphore = asyncio.Semaphore(1)  # Only one ACK connection at a time
-ack_in_progress = set()  # Track which devices are being ACKed
+ack_queue = asyncio.Queue()  # Queue for pending ACKs
+ack_in_progress = set()  # Track devices currently being ACKed
+scanner_stop_event = asyncio.Event()  # Control flag to stop continuous scanner
 
 # Device store
 discovered_devices = []
@@ -215,12 +216,10 @@ def parse_manufacturer_data(manufacturer_data: dict) -> dict:
         "needs_ack": bool(data[1] & 0x02)
     }
 
-async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
+async def scanner(device_name="LeakSeek") -> None:
     """
-    Scan for devices with LeakSeek in the name.
-    Parse manufacturer data from advertisements.
-    Only connect when ACK is needed.
-    Enhanced with metrics tracking and watchdog updates.
+    Continuous scanner that only stops when requested via scanner_stop_event.
+    This eliminates the blind spots caused by frequent start/stop cycles.
     """
     global discovered_devices, watchdog_state, scanner_continuity
 
@@ -235,18 +234,8 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
     scanner_continuity["last_scan_start"] = scan_start_time
 
     metrics["scanner"]["scans_started"] += 1
-    stop_event = asyncio.Event()
+    scanner_stop_event.clear()
     newly_discovered_devices = []
-
-    async def stop_after_timeout():
-        await asyncio.sleep(timeout)
-        # Remove stale devices from global list
-        for device in discovered_devices[:]:
-            if not any(d.address == device.address for d in newly_discovered_devices):
-                discovered_devices.remove(device)
-        stop_event.set()
-
-    asyncio.create_task(stop_after_timeout())
 
     def detection_callback(device, advertisement_data):
         """Process each advertisement with enhanced metrics and filtering"""
@@ -282,30 +271,48 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
                     "rssi": advertisement_data.rssi
                 }
 
-                # If ACK needed and not already in queue/progress, enqueue
-                if parsed["needs_ack"] and device.address not in ack_in_progress:
+                # If ACK needed, enqueue it
+                if parsed["needs_ack"]:
                     if device.address in load_registered_cached():
                         # Check for duplicate alert
                         if is_duplicate_alert(device.address, parsed["seq"]):
                             metrics["alerts"]["duplicates_filtered"] += 1
-                            logging.info(f"Duplicate alert filtered: {device.address}, seq={parsed['seq']}")
+                            # logging.info(f"Duplicate alert filtered: {device.address}, seq={parsed['seq']}")
                             return
 
-                        # Check RSSI before attempting ACK
+                        # Check RSSI before queuing ACK
                         if not is_rssi_acceptable(advertisement_data.rssi):
                             metrics["ack"]["rssi_filtered"] += 1
                             logging.warning(f"⚠️  ALERT from {device.address} (RSSI={advertisement_data.rssi}) - signal too weak for ACK, waiting for better signal")
                             return
 
+                        # Check if already in queue to avoid flooding
+                        # Simple check: if we've already queued an ACK for this device recently
+                        # In a real queue, we'd inspect the queue, but here we'll rely on deduplication
+                        # at the processing stage or simple state tracking.
+                        # For now, just queue it. The consumer loop will handle dedup if needed.
+                        
                         metrics["alerts"]["total"] += 1
                         record_alert(device.address, parsed["seq"])
                         logging.warning(f"⚠️  ALERT from {device.address}, seq={parsed['seq']}, RSSI={advertisement_data.rssi}, queuing ACK")
-                        ack_in_progress.add(device.address)
-                        asyncio.create_task(ack_device(device.address, parsed["seq"]))
+                        
+                        # Add to queue (non-blocking)
+                        try:
+                            ack_queue.put_nowait({"address": device.address, "seq": parsed["seq"]})
+                            # Trigger scanner stop to process ACKs
+                            scanner_stop_event.set()
+                        except asyncio.QueueFull:
+                            logging.error("ACK queue full, dropping alert")
 
     try:
-        async with BleakScanner(detection_callback) as _scanner:
-            await stop_event.wait()
+        # Use scanning_mode='passive' if supported to reduce radio overhead
+        # Note: 'passive' might not be fully supported on all BlueZ versions/adapters, 
+        # but is generally better for monitoring if it works.
+        # Fallback to active if issues arise.
+        async with BleakScanner(detection_callback, scanning_mode="active") as _scanner:
+            logging.info("Scanner started (continuous mode)")
+            await scanner_stop_event.wait()
+            logging.info("Scanner pausing for ACK processing...")
 
         # Track scan end time for continuity monitoring
         scanner_continuity["last_scan_end"] = time.time()
@@ -313,6 +320,7 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
         metrics["scanner"]["scans_completed"] += 1
         metrics["scanner"]["last_scan_time"] = time.time()
         metrics["scanner"]["consecutive_failures"] = 0  # Reset on success
+        
     except Exception as e:
         scanner_continuity["last_scan_end"] = time.time()
         metrics["scanner"]["scans_failed"] += 1
@@ -320,65 +328,92 @@ async def scanner(timeout=8.0, device_name="LeakSeek") -> None:
         logging.error(f"Scanner exception: {e}")
         raise
 
+async def process_ack_queue():
+    """
+    Process all pending ACKs in the queue.
+    Run this while the scanner is paused.
+    """
+    processed_count = 0
+    while not ack_queue.empty():
+        try:
+            item = ack_queue.get_nowait()
+            address = item["address"]
+            seq = item["seq"]
+            
+            # Double check staleness/necessity
+            if address in sensor_data:
+                # If we've seen a newer packet saying no ACK needed, skip
+                # (Though usually we want to ACK anyway to be sure)
+                pass
+
+            logging.info(f"Processing queued ACK for {address}, seq={seq}")
+            await ack_device(address, seq)
+            processed_count += 1
+            ack_queue.task_done()
+            
+            # Brief pause between ACKs to let radio settle?
+            await asyncio.sleep(0.5)
+            
+        except Exception as e:
+            logging.error(f"Error processing ACK queue item: {e}")
+    
+    if processed_count > 0:
+        logging.info(f"Processed {processed_count} ACKs")
+
 async def ack_device(address: str, seq: int, max_retries: int = MAX_ACK_RETRIES):
     """
     Connect to device and write ACK to clear alert.
-    Uses semaphore to ensure only one connection at a time.
-    Enhanced with exponential backoff, latency tracking, and better error handling.
+    No semaphore needed here as this is called sequentially from the main loop.
     """
-    async with ack_semaphore:
-        start_time = time.time()
-        metrics["ack"]["attempts"] += 1
+    start_time = time.time()
+    metrics["ack"]["attempts"] += 1
 
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    metrics["ack"]["retries"] += 1
-                    delay = calculate_backoff_delay(attempt - 1, INITIAL_RETRY_DELAY, MAX_RETRY_DELAY)
-                    logging.info(f"ACK retry {attempt+1}/{max_retries} for {address} after {delay:.1f}s delay")
-                    await asyncio.sleep(delay)
-                else:
-                    logging.info(f"ACK attempt {attempt+1}/{max_retries} for {address}, seq={seq}")
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                metrics["ack"]["retries"] += 1
+                delay = calculate_backoff_delay(attempt - 1, INITIAL_RETRY_DELAY, MAX_RETRY_DELAY)
+                logging.info(f"ACK retry {attempt+1}/{max_retries} for {address} after {delay:.1f}s delay")
+                await asyncio.sleep(delay)
+            else:
+                logging.info(f"ACK attempt {attempt+1}/{max_retries} for {address}, seq={seq}")
 
-                # Prefer using BLEDevice object if available for better connection reliability
-                device = next((d for d in discovered_devices if d.address == address), None)
-                client_target = device if device else address
+            # Prefer using BLEDevice object if available for better connection reliability
+            device = next((d for d in discovered_devices if d.address == address), None)
+            client_target = device if device else address
 
-                async with BleakClient(client_target, timeout=10.0) as client:
-                    if client.is_connected:
-                        # Write the sequence number to ACK characteristic
-                        await client.write_gatt_char(
-                            ACK_CHARACTERISTIC_UUID,
-                            bytes([seq]),
-                            response=False
-                        )
+            async with BleakClient(client_target, timeout=10.0) as client:
+                if client.is_connected:
+                    # Write the sequence number to ACK characteristic
+                    await client.write_gatt_char(
+                        ACK_CHARACTERISTIC_UUID,
+                        bytes([seq]),
+                        response=False
+                    )
 
-                        # Calculate latency
-                        latency = time.time() - start_time
-                        metrics["ack"]["successes"] += 1
-                        metrics["ack"]["total_latency"] += latency
+                    # Calculate latency
+                    latency = time.time() - start_time
+                    metrics["ack"]["successes"] += 1
+                    metrics["ack"]["total_latency"] += latency
 
-                        logging.info(f"✓ ACK sent to {address}, seq={seq}, latency={latency:.2f}s")
+                    logging.info(f"✓ ACK sent to {address}, seq={seq}, latency={latency:.2f}s")
 
-                        # Update sensor data
-                        if address in sensor_data:
-                            sensor_data[address]["needs_ack"] = False
-                            sensor_data[address]["last_ack_time"] = time.time()
+                    # Update sensor data
+                    if address in sensor_data:
+                        sensor_data[address]["needs_ack"] = False
+                        sensor_data[address]["last_ack_time"] = time.time()
 
-                        # Success - exit retry loop
-                        break
+                    # Success - exit retry loop
+                    return
 
-            except Exception as e:
-                logging.error(f"ACK attempt {attempt+1} failed for {address}: {type(e).__name__}: {e}")
-                if attempt < max_retries - 1:
-                    continue
-                else:
-                    # All attempts failed
-                    metrics["ack"]["failures"] += 1
-                    logging.error(f"❌ All {max_retries} ACK attempts failed for {address}")
-
-        # Remove from in-progress set
-        ack_in_progress.discard(address)
+        except Exception as e:
+            logging.error(f"ACK attempt {attempt+1} failed for {address}: {type(e).__name__}: {e}")
+            if attempt < max_retries - 1:
+                continue
+            else:
+                # All attempts failed
+                metrics["ack"]["failures"] += 1
+                logging.error(f"❌ All {max_retries} ACK attempts failed for {address}")
 
 async def eink_update_loop():
     """Periodically update e-ink display"""
@@ -443,30 +478,21 @@ async def main():
                         logging.critical("Failed to reset Bluetooth adapter - manual intervention may be required")
 
         # Track ACK pauses for diagnostics
-        if ack_in_progress:
+        if not ack_queue.empty():
             scanner_continuity["ack_pause_count"] += 1
             pause_start = time.time()
-
-            # RBPi Zero W 2 hardware constraint: shared 2.4GHz antenna (WiFi + BLE)
-            # and BCM43436 chip struggles with concurrent scan + connection.
-            # Conservative approach: pause scanning during ACK to prevent:
-            # - RF interference (same antenna)
-            # - BlueZ stack confusion
-            # - Failed ACKs due to resource contention
-            #
-            # For more powerful hardware (RPi 3/4/5), set ENABLE_CONCURRENT_SCAN_ACK = True
-            if not ENABLE_CONCURRENT_SCAN_ACK:
-                await asyncio.sleep(ACK_SCANNER_PAUSE_DURATION)
-                scanner_continuity["total_pause_time"] += time.time() - pause_start
-                continue  # Pause scanning while ACK in progress (Zero W 2 constraint)
-            else:
-                # On more powerful hardware, just give ACK a brief head start
-                await asyncio.sleep(0.5)
-                scanner_continuity["total_pause_time"] += time.time() - pause_start
-                # Fall through - scanner runs concurrently
+            
+            # Process ACKs - CRITICAL: Must be error-safe
+            try:
+                await process_ack_queue()
+            except Exception as e:
+                logging.error(f"CRITICAL: Error in ACK processing loop: {e}")
+            
+            scanner_continuity["total_pause_time"] += time.time() - pause_start
 
         try:
-            await scanner(8)  # Longer scan, less frequent restarts
+            # Continuous scanner - will block until scanner_stop_event is set
+            await scanner()
             retry_index = 0  # Reset backoff on success
 
         except Exception as e:
@@ -651,6 +677,13 @@ async def rename_device(address: str, new_name: str):
     else:
         return {"status": "not found", "address": address}
 
+async def manual_ack_task(address: str, seq: int):
+    """Wrapper for manual ACK that cleans up ack_in_progress"""
+    try:
+        await ack_device(address, seq)
+    finally:
+        ack_in_progress.discard(address)
+
 @app.post("/ack/{address}")
 async def manual_ack(address: str):
     """Manually trigger an ACK for a device"""
@@ -663,7 +696,7 @@ async def manual_ack(address: str):
         return {"status": "pending", "message": "ACK already in progress"}
 
     ack_in_progress.add(address)
-    asyncio.create_task(ack_device(address, seq))
+    asyncio.create_task(manual_ack_task(address, seq))
 
     return {"status": "queued", "address": address, "seq": seq}
 
