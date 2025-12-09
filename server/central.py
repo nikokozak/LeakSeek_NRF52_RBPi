@@ -306,12 +306,17 @@ async def scanner(device_name="LeakSeek") -> None:
 
     try:
         # Use scanning_mode='passive' if supported to reduce radio overhead
-        # Note: 'passive' might not be fully supported on all BlueZ versions/adapters, 
-        # but is generally better for monitoring if it works.
-        # Fallback to active if issues arise.
         async with BleakScanner(detection_callback, scanning_mode="active") as _scanner:
             logging.info("Scanner started (continuous mode)")
-            await scanner_stop_event.wait()
+            
+            # Heartbeat loop to prove scanner is alive
+            while not scanner_stop_event.is_set():
+                try:
+                    await asyncio.wait_for(scanner_stop_event.wait(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    # Log heartbeat stats
+                    logging.info(f"Scanner heartbeat: {metrics['scanner']['advertisements_received']} pkts total, {len(sensor_data)} devices")
+            
             logging.info("Scanner pausing for ACK processing...")
 
         # Track scan end time for continuity monitoring

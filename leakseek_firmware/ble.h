@@ -142,11 +142,13 @@ void ble_set_advertising(uint8_t mode, uint8_t flags, uint8_t seq, uint8_t batte
     } else {
       Bluefruit.Advertising.setInterval(ADV_INTERVAL_ALERT_SLOW, ADV_INTERVAL_ALERT_SLOW + 16);
     }
-    Bluefruit.Advertising.setFastTimeout(30);
+    // Disable built-in timeout logic; we handle timing manually in loop()
+    Bluefruit.Advertising.setFastTimeout(0); 
   } else {
     // Normal mode: non-connectable, slow intervals
     Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED);
     Bluefruit.Advertising.setInterval(ADV_INTERVAL_NORMAL, ADV_INTERVAL_NORMAL);
+    Bluefruit.Advertising.setFastTimeout(0);
   }
 
   Bluefruit.Advertising.restartOnDisconnect(true);
